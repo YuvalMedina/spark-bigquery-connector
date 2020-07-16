@@ -82,4 +82,13 @@ public class BigQueryClientModule implements Module {
         config.getMaterializationProject(),
         config.getMaterializationDataset());
   }
+
+  @Provides
+  @Singleton
+  public BigQueryFactory provideBigQueryFactory(
+          BigQueryConfig config,
+          UserAgentHeaderProvider userAgentHeaderProvider,
+          BigQueryCredentialsSupplier bigQueryCredentialsSupplier) {
+    return new BigQueryFactory(config, userAgentHeaderProvider, bigQueryCredentialsSupplier);
+  }
 }

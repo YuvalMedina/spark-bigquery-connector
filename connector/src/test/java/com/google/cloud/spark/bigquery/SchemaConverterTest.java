@@ -100,7 +100,6 @@ public class SchemaConverterTest {
         Schema converted = toBigQuerySchema(schema);
 
         for(int i = 0; i < expected.getFields().size(); i++){
-            if (i == 8) continue; // FIXME: delete this line when Timestamp conversion can be restored.
             assertThat(converted.getFields().get(i)).isEqualTo(expected.getFields().get(i));
         }
     }
@@ -132,8 +131,7 @@ public class SchemaConverterTest {
     public void testTimeTypesConversions() throws Exception {
         logger.setLevel(Level.DEBUG);
 
-        // FIXME: restore this check when the Vortex team adds microsecond precision, and Timestamp conversion can be fixed.
-        //assertThat(toBigQueryType(DataTypes.TimestampType)).isEqualTo(LegacySQLTypeName.TIMESTAMP);
+        assertThat(toBigQueryType(DataTypes.TimestampType)).isEqualTo(LegacySQLTypeName.TIMESTAMP);
         assertThat(toBigQueryType(DataTypes.DateType)).isEqualTo(LegacySQLTypeName.DATE);
     }
 
