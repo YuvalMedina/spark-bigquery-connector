@@ -28,14 +28,12 @@ public class BigQueryInsertAllDataSourceWriter implements DataSourceWriter {
     private final BigQuery bigQuery;
 
     private final TableId destinationTableId;
-    // writeTo is a different parameter, in case over-writing is needed before committing to the user's table.
-    private final TableId temporaryTableId;
     private final StructType sparkSchema;
     private final Schema bigQuerySchema;
-    private final SaveMode saveMode;
     private final String writeUUID;
 
-    private final TableInfo table;
+    private Table temporaryTable;
+    private TableId temporaryTableId;
 
     private boolean ignoreInputs = false;
     private boolean overwrite = false;
@@ -49,21 +47,20 @@ public class BigQueryInsertAllDataSourceWriter implements DataSourceWriter {
         this.destinationTableId = destinationTableId;
         this.temporaryTableId = destinationTableId;
         this.writeUUID = writeUUID;
-        this.saveMode = saveMode;
         this.sparkSchema = sparkSchema;
         this.bigQuerySchema = toBigQuerySchema(sparkSchema);
 
-        this.table = getOrCreateTable(saveMode, temporaryTableId);
+        this.temporaryTable = getOrCreateTable(saveMode);
     }
 
-    private TableInfo getOrCreateTable(SaveMode saveMode, TableId tableId) {
-        if(bigQueryClient.tableExists(tableId)) {
+    private Table getOrCreateTable(SaveMode saveMode) {
+        if(bigQueryClient.tableExists(destinationTableId)) {
             switch (saveMode) {
                 case Append:
                     break;
                 case Overwrite:
                     overwrite = true;
-                    this.temporaryTableId = SOME_TMP_TABLE_ID; // TODO: create some sort of temporary tableID.
+                    this.temporaryTableId = TableId.of(destinationTableId.getDataset(), destinationTableId.getTable()+"tmp123456789"); // TODO: create some sort of temporary tableID.
                     return bigQueryClient.createTable(temporaryTableId, bigQuerySchema);
                 case Ignore:
                     ignoreInputs = true;
@@ -71,7 +68,7 @@ public class BigQueryInsertAllDataSourceWriter implements DataSourceWriter {
                 case ErrorIfExists:
                     throw new RuntimeException("Table already exists in BigQuery."); // TODO: should this be a RuntimeException?
             }
-            return bigQueryClient.getTable(tableId);
+            return (Table)bigQueryClient.getTable(temporaryTableId);
         }
         else {
             return bigQueryClient.createTable(temporaryTableId, bigQuerySchema);

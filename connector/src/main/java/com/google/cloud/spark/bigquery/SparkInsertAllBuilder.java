@@ -3,14 +3,19 @@ package com.google.cloud.spark.bigquery;
 import com.google.cloud.bigquery.*;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.catalyst.util.ArrayData;
+import org.apache.spark.sql.catalyst.util.DateTimeUtils$;
 import org.apache.spark.sql.types.*;
 import org.apache.spark.unsafe.types.UTF8String;
 
 import java.io.IOException;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.sql.Date;
 import java.util.*;
 
 public class SparkInsertAllBuilder {
 
+    private static final Charset UTF_8 = StandardCharsets.UTF_8;
     private static final String MAPTYPE_ERROR_MESSAGE = "MapType is unsupported.";
     private static final long MAX_BATCH_ROW_COUNT = 500;
 
@@ -109,18 +114,21 @@ public class SparkInsertAllBuilder {
         if (sparkType instanceof ByteType
                 || sparkType instanceof ShortType
                 || sparkType instanceof IntegerType
-                || sparkType instanceof LongType
-                || sparkType instanceof TimestampType
-                || sparkType instanceof DateType) {
+                || sparkType instanceof LongType) {
             return ((Number) sparkValue).longValue();
         } // TODO: CalendarInterval
+
+        if (sparkType instanceof TimestampType
+                || sparkType instanceof DateType) {
+            return new String(DateTimeUtils$.MODULE$.dateToString((Integer) sparkValue).getBytes(), UTF_8);
+        }
 
         if (sparkType instanceof FloatType || sparkType instanceof DoubleType) {
             return ((Number) sparkValue).doubleValue();
         }
 
         if (sparkType instanceof DecimalType) {
-            return ((Decimal) sparkValue).toDouble();
+            return new String(sparkValue.toString().getBytes(), UTF_8);
         } // TODO:
 
         if (sparkType instanceof BooleanType) {
@@ -128,11 +136,11 @@ public class SparkInsertAllBuilder {
         }
 
         if (sparkType instanceof BinaryType) {
-            return Base64.getEncoder().encode((byte[])sparkValue);
+            return new String(Base64.getEncoder().encode((byte[])sparkValue), UTF_8);
         }
 
         if (sparkType instanceof StringType) {
-            return new String(((UTF8String) sparkValue).getBytes()); // StandardCharactersetUTF8
+            return new String(((UTF8String) sparkValue).getBytes(), UTF_8);
         }
 
         if (sparkType instanceof MapType) {

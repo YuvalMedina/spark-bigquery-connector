@@ -39,7 +39,7 @@ public class BigQueryInsertAllDataWriter implements DataWriter<InternalRow> {
         this.taskId = taskId;
         this.epochId = epochId;
 
-        if(!ignoreInputs) return;
+        if(ignoreInputs) return;
 
         this.sparkInsertAllBuilder = new SparkInsertAllBuilder(sparkSchema, tableId, bigQuery);
     }
