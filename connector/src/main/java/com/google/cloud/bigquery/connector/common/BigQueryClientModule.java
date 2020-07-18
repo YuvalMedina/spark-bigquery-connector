@@ -18,6 +18,7 @@ package com.google.cloud.bigquery.connector.common;
 import com.google.auth.Credentials;
 import com.google.auth.oauth2.ServiceAccountCredentials;
 import com.google.cloud.bigquery.BigQueryOptions;
+import com.google.cloud.spark.bigquery.v2.BigQueryInsertAllDataSourceWriter;
 import com.google.inject.*;
 
 import java.util.Optional;
@@ -81,5 +82,14 @@ public class BigQueryClientModule implements Module {
         options.build().getService(),
         config.getMaterializationProject(),
         config.getMaterializationDataset());
+  }
+
+  @Provides
+  @Singleton
+  public BigQueryClientFactory provideBigQueryClientFactory(
+      BigQueryConfig config,
+      UserAgentHeaderProvider userAgentHeaderProvider,
+      BigQueryCredentialsSupplier bigQueryCredentialsSupplier) {
+    return new BigQueryClientFactory(config, userAgentHeaderProvider, bigQueryCredentialsSupplier);
   }
 }

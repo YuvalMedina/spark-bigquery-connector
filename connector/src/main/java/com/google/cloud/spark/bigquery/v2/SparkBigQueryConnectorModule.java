@@ -16,10 +16,7 @@
 package com.google.cloud.spark.bigquery.v2;
 
 import com.google.cloud.bigquery.TableInfo;
-import com.google.cloud.bigquery.connector.common.BigQueryClient;
-import com.google.cloud.bigquery.connector.common.BigQueryConfig;
-import com.google.cloud.bigquery.connector.common.BigQueryReadClientFactory;
-import com.google.cloud.bigquery.connector.common.UserAgentProvider;
+import com.google.cloud.bigquery.connector.common.*;
 import com.google.cloud.spark.bigquery.SparkBigQueryConfig;
 import com.google.cloud.spark.bigquery.SparkBigQueryConnectorUserAgentProvider;
 import com.google.common.collect.ImmutableMap;
@@ -27,6 +24,7 @@ import com.google.inject.Binder;
 import com.google.inject.Module;
 import com.google.inject.Provides;
 import com.google.inject.Singleton;
+import org.apache.spark.sql.SaveMode;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.sources.v2.DataSourceOptions;
 import org.apache.spark.sql.types.StructType;
@@ -40,12 +38,28 @@ public class SparkBigQueryConnectorModule implements Module {
   private final SparkSession spark;
   private final DataSourceOptions options;
   private final Optional<StructType> schema;
+  // For writing purposes:
+  private SaveMode saveMode;
+  private String writeUUID;
 
   public SparkBigQueryConnectorModule(
       SparkSession spark, DataSourceOptions options, Optional<StructType> schema) {
     this.spark = spark;
     this.options = options;
     this.schema = schema;
+  }
+
+  public SparkBigQueryConnectorModule(
+      SparkSession spark,
+      DataSourceOptions options,
+      StructType schema,
+      SaveMode saveMode,
+      String writeUUID) {
+    this.spark = spark;
+    this.options = options;
+    this.schema = Optional.of(schema);
+    this.saveMode = saveMode;
+    this.writeUUID = writeUUID;
   }
 
   @Override
@@ -79,6 +93,16 @@ public class SparkBigQueryConnectorModule implements Module {
         config.toReadSessionCreatorConfig(),
         config.getFilter(),
         schema);
+  }
+
+  @Singleton
+  @Provides
+  public BigQueryInsertAllDataSourceWriter provideInsertAllDataSourceWriter(
+      BigQueryClient bigQueryClient,
+      SparkBigQueryConfig config,
+      BigQueryClientFactory bigQueryClientFactory) {
+    return new BigQueryInsertAllDataSourceWriter(
+        bigQueryClientFactory, config.getTableId(), writeUUID, saveMode, schema.get());
   }
 
   @Singleton

@@ -4,14 +4,13 @@ import org.apache.spark.sql.sources.v2.writer.WriterCommitMessage;
 
 public class BigQueryInsertAllWriterCommitMessage implements WriterCommitMessage {
 
-
   private final int partitionId;
   private final long taskId;
   private final long epochId;
-  private final Long rowCount;
+  private final long rowCount;
 
-  public BigQueryInsertAllWriterCommitMessage(int partitionId, long taskId, long epochId,
-                                              Long rowCount) {
+  public BigQueryInsertAllWriterCommitMessage(
+      int partitionId, long taskId, long epochId, long rowCount) {
     this.partitionId = partitionId;
     this.taskId = taskId;
     this.epochId = epochId;
@@ -30,27 +29,21 @@ public class BigQueryInsertAllWriterCommitMessage implements WriterCommitMessage
     return epochId;
   }
 
-  public long getRowCount() throws NoSuchFieldError {
-    if(rowCount == null) {
-      throw new NoSuchFieldError("Data Writer did not commit any rows.");
-    }
+  public long getRowCount() {
     return rowCount;
   }
 
   @Override
   public String toString() {
-    if(rowCount == null) {
-      return "BigQueryInsertAllWriterCommitMessage{" +
-              "partitionId=" + partitionId +
-              ", taskId=" + taskId +
-              ", epochId=" + epochId +
-              '}';
-    }
-    return "BigQueryInsertAllWriterCommitMessage{" +
-            "partitionId=" + partitionId +
-            ", taskId=" + taskId +
-            ", epochId=" + epochId +
-            ", rowCount=" + rowCount +
-            '}';
+    return "BigQueryInsertAllWriterCommitMessage{"
+        + "partitionId="
+        + partitionId
+        + ", taskId="
+        + taskId
+        + ", epochId="
+        + epochId
+        + ", rowCount="
+        + rowCount
+        + '}';
   }
 }
