@@ -1,7 +1,6 @@
 package com.google.cloud.spark.bigquery.v2;
 
 import com.google.cloud.bigquery.Table;
-import com.google.cloud.bigquery.TableId;
 import com.google.cloud.bigquery.connector.common.BigQueryClientFactory;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.sources.v2.writer.DataWriter;
