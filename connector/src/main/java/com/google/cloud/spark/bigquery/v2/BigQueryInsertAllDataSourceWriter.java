@@ -27,19 +27,18 @@ public class BigQueryInsertAllDataSourceWriter implements DataSourceWriter {
 
   private final TableId destinationTableId;
   private final StructType sparkSchema;
-  private final Schema bigQuerySchema;
   private final String writeUUID;
 
-  private Table temporaryTable;
+  private Table writingTable;
 
-  enum AppendOrOverwrite {
-    DESTINATION_DOES_NOT_EXIST,
+  enum WriteMode {
+    IGNORE_INPUTS,
     OVERWRITE,
-    APPEND;
+    APPEND,
+    DESTINATION_DID_NOT_EXIST;
   }
 
-  private boolean ignoreInputs = false;
-  private AppendOrOverwrite appendOrOverwrite = AppendOrOverwrite.DESTINATION_DOES_NOT_EXIST;
+  private WriteMode writeMode = WriteMode.DESTINATION_DID_NOT_EXIST;
 
   public BigQueryInsertAllDataSourceWriter(
       BigQueryClientFactory bigQueryClientFactory,
@@ -53,22 +52,23 @@ public class BigQueryInsertAllDataSourceWriter implements DataSourceWriter {
     this.destinationTableId = destinationTableId;
     this.writeUUID = writeUUID;
     this.sparkSchema = sparkSchema;
-    this.bigQuerySchema = toBigQuerySchema(sparkSchema);
 
-    this.temporaryTable = getOrCreateTable(saveMode);
+    Schema bigQuerySchema = toBigQuerySchema(sparkSchema);
+    this.writingTable = getOrCreateTable(saveMode, destinationTableId, bigQuerySchema);
   }
 
-  private Table getOrCreateTable(SaveMode saveMode) {
+  private Table getOrCreateTable(
+      SaveMode saveMode, TableId destinationTableId, Schema bigQuerySchema) {
     if (bigQueryClient.tableExists(destinationTableId)) { // TODO schema validation.
       switch (saveMode) {
         case Ignore:
-          ignoreInputs = true;
+          this.writeMode = WriteMode.IGNORE_INPUTS;
           return null;
         case Append:
-          this.appendOrOverwrite = AppendOrOverwrite.APPEND;
+          this.writeMode = WriteMode.APPEND;
           break;
         case Overwrite:
-          this.appendOrOverwrite = AppendOrOverwrite.OVERWRITE;
+          this.writeMode = WriteMode.OVERWRITE;
           break;
         case ErrorIfExists:
           throw new RuntimeException(
@@ -81,17 +81,21 @@ public class BigQueryInsertAllDataSourceWriter implements DataSourceWriter {
               .getSchema()
               .equals(bigQuerySchema),
           new RuntimeException("Destination table's schema is not compatible."));
-    } else {
-      appendOrOverwrite = AppendOrOverwrite.DESTINATION_DOES_NOT_EXIST;
+      // If the table exists, whether we append or overwrite, writing is done to a temporary table
+      // first.
+      return bigQueryClient.createTempTable(destinationTableId, bigQuerySchema);
     }
-
-    return bigQueryClient.createTempTable(destinationTableId, bigQuerySchema);
+    writeMode = WriteMode.DESTINATION_DID_NOT_EXIST;
+    return bigQueryClient.createTable(destinationTableId, bigQuerySchema);
   }
 
   @Override
   public DataWriterFactory<InternalRow> createWriterFactory() {
     return new BigQueryInsertAllDataWriterFactory(
-        bigQueryClientFactory, temporaryTable, sparkSchema, ignoreInputs);
+        bigQueryClientFactory,
+        writingTable,
+        sparkSchema,
+        writeMode.equals(WriteMode.IGNORE_INPUTS));
   }
 
   @Override
@@ -99,46 +103,44 @@ public class BigQueryInsertAllDataSourceWriter implements DataSourceWriter {
 
   @Override
   public void commit(WriterCommitMessage[] messages) {
-    if (ignoreInputs) return;
+    if (writeMode.equals(WriteMode.IGNORE_INPUTS)) return;
 
     long totalRowCount = 0;
     for (WriterCommitMessage message : messages) {
       totalRowCount += ((BigQueryInsertAllWriterCommitMessage) message).getRowCount();
     }
 
-    Job copyJob;
-    switch (appendOrOverwrite) {
-      case APPEND:
+    // If we made a temporary table because of an append / overwrite save-mode and a pre-existing
+    // destination table:
+    if (!writeMode.equals(WriteMode.DESTINATION_DID_NOT_EXIST)) {
+      Job copyJob;
+      if (writeMode.equals(WriteMode.APPEND)) {
         copyJob =
             bigQueryClient.appendFromTemporaryToDestination(
-                temporaryTable.getTableId(), destinationTableId);
-        break;
-      case OVERWRITE:
+                writingTable.getTableId(), destinationTableId);
+      } else {
+        // overwrite:
         copyJob =
             bigQueryClient.overwriteDestinationWithTemporary(
-                temporaryTable.getTableId(), destinationTableId);
-        break;
-      default:
-        copyJob =
-            bigQueryClient.createDestinationFromTemporary(
-                temporaryTable.getTableId(), destinationTableId, bigQuerySchema);
-        break;
-    }
-
-    try {
-      Job completedJob =
-          copyJob.waitFor(
-              RetryOption.initialRetryDelay(Duration.ofSeconds(1)),
-              RetryOption.totalTimeout(Duration.ofMinutes(3)));
-      if (completedJob == null && completedJob.getStatus().getError() != null) {
-        throw new IOException(completedJob.getStatus().getError().toString());
+                writingTable.getTableId(), destinationTableId);
       }
-    } catch (InterruptedException | IOException e) {
-      throw new RuntimeException(
-          "Could not copy table from temporary sink to destination table.", e);
-    }
 
-    deleteTemporaryTable();
+      try {
+        Job completedJob =
+            copyJob.waitFor(
+                RetryOption.initialRetryDelay(Duration.ofSeconds(1)),
+                RetryOption.totalTimeout(Duration.ofMinutes(3)));
+        if (completedJob == null && completedJob.getStatus().getError() != null) {
+          throw new IOException(completedJob.getStatus().getError().toString());
+        }
+      } catch (InterruptedException | IOException e) {
+        throw new RuntimeException(
+            "Could not copy table from temporary sink to destination table.", e);
+      }
+
+      // delete our temporary writing table:
+      bigQueryClient.deleteTable(writingTable.getTableId());
+    }
 
     logger.info("BigQuery DataSource committed with row count: {}", totalRowCount);
   }
@@ -146,28 +148,12 @@ public class BigQueryInsertAllDataSourceWriter implements DataSourceWriter {
   @Override
   public void abort(WriterCommitMessage[] messages) {
     logger.warn("BigQuery Data Source writer {} aborted.", writeUUID);
-    if (ignoreInputs) return;
+    if (writeMode.equals(WriteMode.IGNORE_INPUTS)) return;
 
-    if (appendOrOverwrite == AppendOrOverwrite.DESTINATION_DOES_NOT_EXIST) {
-      deleteDestinationTable();
-    }
-    if (bigQueryClient.tableExists(temporaryTable.getTableId())) {
-      deleteTemporaryTable();
-    }
-  }
-
-  void deleteTemporaryTable() {
-    Preconditions.checkArgument(
-        bigQueryClient.deleteTable(temporaryTable.getTableId()),
-        new RuntimeException(
-            String.format("Could not delete temporary table %s.", temporaryTable.getTableId())));
-  }
-
-  void deleteDestinationTable() {
-    Preconditions.checkArgument(
-        bigQueryClient.deleteTable(destinationTableId),
-        new RuntimeException(
-            String.format("Could not delete destination table %s.", destinationTableId)));
+    // this will delete either the temporary table created (in case of a preexisting destination
+    // table) or the the
+    // destination table itself, if it did not exist prior.
+    bigQueryClient.deleteTable(writingTable.getTableId());
   }
 
   @Override
