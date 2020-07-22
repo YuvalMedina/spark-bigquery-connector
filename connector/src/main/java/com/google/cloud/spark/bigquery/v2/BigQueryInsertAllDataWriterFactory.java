@@ -29,7 +29,7 @@ public class BigQueryInsertAllDataWriterFactory implements DataWriterFactory<Int
   @Override
   public DataWriter<InternalRow> createDataWriter(int partitionId, long taskId, long epochId) {
     if (ignoreInputs) {
-      return new NoOpDataSourceWriter();
+      return new NoOpDataWriter();
     }
     return new BigQueryInsertAllDataWriter(
         bigQueryClientFactory, table.getTableId(), sparkSchema, partitionId, taskId, epochId);

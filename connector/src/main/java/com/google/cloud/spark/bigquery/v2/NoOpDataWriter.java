@@ -6,7 +6,7 @@ import org.apache.spark.sql.sources.v2.writer.WriterCommitMessage;
 
 import java.io.IOException;
 
-public class NoOpDataSourceWriter implements DataWriter<InternalRow> {
+public class NoOpDataWriter implements DataWriter<InternalRow> {
   @Override
   public void write(InternalRow record) throws IOException {}
 

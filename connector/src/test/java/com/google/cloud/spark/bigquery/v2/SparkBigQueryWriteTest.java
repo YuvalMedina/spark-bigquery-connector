@@ -1,14 +1,12 @@
 package com.google.cloud.spark.bigquery.v2;
 
 import com.google.cloud.ServiceOptions;
-import com.google.cloud.bigquery.BigQuery;
-import com.google.cloud.bigquery.BigQueryOptions;
-import com.google.cloud.bigquery.DatasetInfo;
-import com.google.cloud.bigquery.TableId;
+import com.google.cloud.bigquery.*;
 import org.apache.log4j.Level;
 import org.apache.log4j.LogManager;
 import org.apache.log4j.Logger;
 import org.apache.spark.sql.*;
+import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.types.*;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
@@ -107,10 +105,10 @@ public class SparkBigQueryWriteTest {
 
     @AfterClass
     public static void close() throws Exception {
-        /*if (bigquery != null) {
-            RemoteBigQueryHelper.forceDelete(bigquery, DATASET);
+        if (bigquery != null) {
+            bigquery.delete(DatasetId.of(DATASET));
             logger.info("Deleted test dataset: " + DATASET);
-        }*/
+        }
     }
 
     @Test
