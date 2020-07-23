@@ -36,6 +36,7 @@ import org.apache.spark.unsafe.types.UTF8String;
 import org.junit.AssumptionViolatedException;
 import org.junit.Test;
 
+import java.math.BigDecimal;
 import java.util.Base64;
 
 import static com.google.cloud.spark.bigquery.ProtobufUtils.*;
@@ -84,7 +85,7 @@ public class ProtobufUtilsTest {
                                                 .addField(PROTO_DOUBLE_FIELD.clone().setName("Float").setNumber(5))
                                                 .addField(PROTO_BOOLEAN_FIELD.clone().setNumber(6))
                                                 .addField(PROTO_BYTES_FIELD.clone().setNumber(7))
-                                                .addField(PROTO_INTEGER_FIELD.clone().setName("Date").setNumber(8))
+                                                .addField(PROTO_DATE_FIELD.clone().setNumber(8))
                                                 .addField(PROTO_INTEGER_FIELD.clone().setName("TimeStamp").setNumber(9))
                                                 .setName("Schema").build()
                                 ).build(), new Descriptors.FileDescriptor[]{}
@@ -125,8 +126,9 @@ public class ProtobufUtilsTest {
                                 3.14,
                                 true,
                                 new byte[]{11, 0x7F},
+                                1594080000L,
                                 1594080000000L,
-                                1594080000000L
+                                new BigDecimal("-99999999999999999999999999999.999999999")
                         })}
         );
 
@@ -183,6 +185,11 @@ public class ProtobufUtilsTest {
             true, Metadata.empty());
     public final StructField SPARK_TIMESTAMP_FIELD = new StructField("TimeStamp", DataTypes.TimestampType,
             true, Metadata.empty());
+    public final StructField SPARK_MAP_FIELD = new StructField("Map",
+            DataTypes.createMapType(DataTypes.IntegerType, DataTypes.StringType),
+            true, Metadata.empty());
+    public final StructField SPARK_NUMERIC_FIELD = new StructField("Numeric", NUMERIC_SPARK_TYPE,
+            true, Metadata.empty());
 
     public final StructType BIG_SPARK_SCHEMA = new StructType()
             .add(SPARK_INTEGER_FIELD)
@@ -193,7 +200,8 @@ public class ProtobufUtilsTest {
             .add(SPARK_BOOLEAN_FIELD)
             .add(SPARK_BINARY_FIELD)
             .add(SPARK_DATE_FIELD)
-            .add(SPARK_TIMESTAMP_FIELD);
+            .add(SPARK_TIMESTAMP_FIELD)
+            .add(SPARK_NUMERIC_FIELD);
 
 
     public final Field BIGQUERY_INTEGER_FIELD = Field.newBuilder("Number", LegacySQLTypeName.INTEGER,
@@ -218,10 +226,12 @@ public class ProtobufUtilsTest {
             .setMode(Field.Mode.NULLABLE).build();
     public final Field BIGQUERY_TIMESTAMP_FIELD = Field.newBuilder("TimeStamp", LegacySQLTypeName.TIMESTAMP, (FieldList)null)
             .setMode(Field.Mode.NULLABLE).build();
+    public final Field BIGQUERY_NUMERIC_FIELD = Field.newBuilder("Numeric", LegacySQLTypeName.NUMERIC, (FieldList)null)
+            .setMode(Field.Mode.NULLABLE).build();
 
     public final Schema BIG_BIGQUERY_SCHEMA = Schema.of(BIGQUERY_INTEGER_FIELD, BIGQUERY_STRING_FIELD, BIGQUERY_ARRAY_FIELD,
             BIGQUERY_NESTED_STRUCT_FIELD, BIGQUERY_FLOAT_FIELD, BIGQUERY_BOOLEAN_FIELD, BIGQUERY_BYTES_FIELD, BIGQUERY_DATE_FIELD,
-            BIGQUERY_TIMESTAMP_FIELD);
+            BIGQUERY_TIMESTAMP_FIELD, BIGQUERY_NUMERIC_FIELD);
 
 
     public final DescriptorProtos.FieldDescriptorProto.Builder PROTO_INTEGER_FIELD = DescriptorProtos.FieldDescriptorProto.newBuilder()
@@ -263,6 +273,11 @@ public class ProtobufUtilsTest {
             .setName("Binary")
             .setNumber(1)
             .setType(DescriptorProtos.FieldDescriptorProto.Type.TYPE_BYTES)
+            .setLabel(DescriptorProtos.FieldDescriptorProto.Label.LABEL_OPTIONAL);
+    public final DescriptorProtos.FieldDescriptorProto.Builder PROTO_DATE_FIELD = DescriptorProtos.FieldDescriptorProto.newBuilder()
+            .setName("Date")
+            .setNumber(1)
+            .setType(DescriptorProtos.FieldDescriptorProto.Type.TYPE_INT32)
             .setLabel(DescriptorProtos.FieldDescriptorProto.Label.LABEL_OPTIONAL);
 
 
@@ -370,7 +385,9 @@ public class ProtobufUtilsTest {
                     .setField(BIG_SCHEMA_ROW_DESCRIPTOR.findFieldByNumber(5), 3.14)
                     .setField(BIG_SCHEMA_ROW_DESCRIPTOR.findFieldByNumber(6), true)
                     .setField(BIG_SCHEMA_ROW_DESCRIPTOR.findFieldByNumber(7), Base64.getEncoder().encode(new byte[]{11, 0x7F}))
-                    .setField(BIG_SCHEMA_ROW_DESCRIPTOR.findFieldByNumber(8), 1594080000000L)
+                    .setField(BIG_SCHEMA_ROW_DESCRIPTOR.findFieldByNumber(8), 1594080000)
                     .setField(BIG_SCHEMA_ROW_DESCRIPTOR.findFieldByNumber(9), 1594080000000L)
+                    .setField(BIG_SCHEMA_ROW_DESCRIPTOR.findFieldByNumber(10),
+                            Base64.getEncoder().encode("-99999999999999999999999999999.999999999".getBytes()))
                     .build().toByteString()).build();
 }

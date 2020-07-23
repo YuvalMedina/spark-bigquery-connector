@@ -209,7 +209,7 @@ public class SchemaConverterTest {
             .add(SPARK_BINARY_FIELD)
             .add(SPARK_DATE_FIELD)
             .add(SPARK_TIMESTAMP_FIELD)
-            .add(SPARK_NUMERIC_FIELD);;
+            .add(SPARK_NUMERIC_FIELD);
 
 
     public final Field BIGQUERY_INTEGER_FIELD = Field.newBuilder("Number", LegacySQLTypeName.INTEGER,
