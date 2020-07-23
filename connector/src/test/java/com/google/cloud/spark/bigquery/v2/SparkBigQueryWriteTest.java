@@ -3,7 +3,6 @@ package com.google.cloud.spark.bigquery.v2;
 import com.google.cloud.RetryOption;
 import com.google.cloud.ServiceOptions;
 import com.google.cloud.bigquery.*;
-import com.google.cloud.bigquery.connector.common.BigQueryClient;
 import org.apache.log4j.Level;
 import org.apache.log4j.LogManager;
 import org.apache.log4j.Logger;
@@ -62,7 +61,6 @@ public class SparkBigQueryWriteTest {
 
     public static SparkSession spark;
     public static BigQuery bigquery;
-    public static BigQueryClient bigQueryClient;
 
     public static Dataset<Row> allTypesDf;
     public static Dataset<Row> smallDataDf;

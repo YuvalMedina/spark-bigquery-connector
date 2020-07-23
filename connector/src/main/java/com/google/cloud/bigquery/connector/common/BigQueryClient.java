@@ -19,8 +19,6 @@ import com.google.cloud.bigquery.*;
 import com.google.cloud.http.BaseHttpServiceException;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.Optional;
 import java.util.Set;
@@ -78,7 +76,10 @@ public class BigQueryClient {
     String tempDataset = materializationDataset.orElseGet(destinationTableId::getDataset);
     TableId tempTableId =
         TableId.of(tempProject, tempDataset, destinationTableId.getTable() + System.nanoTime());
-    return createTable(tempTableId, schema);
+    // Build TableInfo with expiration time of one day from current epoch.
+    TableInfo tableInfo = TableInfo.newBuilder(tempTableId, StandardTableDefinition.of(schema))
+            .setExpirationTime(System.currentTimeMillis()+86400000L).build();
+    return bigQuery.create(tableInfo);
   }
 
   public boolean deleteTable(TableId tableId) {
