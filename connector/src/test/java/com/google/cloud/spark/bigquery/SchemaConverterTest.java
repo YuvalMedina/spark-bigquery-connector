@@ -196,6 +196,8 @@ public class SchemaConverterTest {
     public final StructField SPARK_MAP_FIELD = new StructField("Map",
             DataTypes.createMapType(DataTypes.IntegerType, DataTypes.StringType),
             true, Metadata.empty());
+    public final StructField SPARK_NUMERIC_FIELD = new StructField("Numeric", NUMERIC_SPARK_TYPE,
+            true, Metadata.empty());
 
     public final StructType BIG_SPARK_SCHEMA = new StructType()
             .add(SPARK_INTEGER_FIELD)
@@ -206,7 +208,8 @@ public class SchemaConverterTest {
             .add(SPARK_BOOLEAN_FIELD)
             .add(SPARK_BINARY_FIELD)
             .add(SPARK_DATE_FIELD)
-            .add(SPARK_TIMESTAMP_FIELD);
+            .add(SPARK_TIMESTAMP_FIELD)
+            .add(SPARK_NUMERIC_FIELD);
 
 
     public final Field BIGQUERY_INTEGER_FIELD = Field.newBuilder("Number", LegacySQLTypeName.INTEGER,
@@ -231,10 +234,12 @@ public class SchemaConverterTest {
             .setMode(Field.Mode.NULLABLE).build();
     public final Field BIGQUERY_TIMESTAMP_FIELD = Field.newBuilder("TimeStamp", LegacySQLTypeName.TIMESTAMP, (FieldList)null)
             .setMode(Field.Mode.NULLABLE).build();
+    public final Field BIGQUERY_NUMERIC_FIELD = Field.newBuilder("Numeric", LegacySQLTypeName.NUMERIC, (FieldList)null)
+            .setMode(Field.Mode.NULLABLE).build();
 
     public final Schema BIG_BIGQUERY_SCHEMA = Schema.of(BIGQUERY_INTEGER_FIELD, BIGQUERY_STRING_FIELD, BIGQUERY_ARRAY_FIELD,
             BIGQUERY_NESTED_STRUCT_FIELD, BIGQUERY_FLOAT_FIELD, BIGQUERY_BOOLEAN_FIELD, BIGQUERY_BYTES_FIELD, BIGQUERY_DATE_FIELD,
-            BIGQUERY_TIMESTAMP_FIELD);
+            BIGQUERY_TIMESTAMP_FIELD, BIGQUERY_NUMERIC_FIELD);
 
 
     public final StructType BIG_SPARK_SCHEMA2 = new StructType()
