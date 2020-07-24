@@ -64,6 +64,8 @@ public class SparkBigQueryWriteTest {
 
     public static Dataset<Row> allTypesDf;
     public static Dataset<Row> smallDataDf;
+    // dataframe twice as big as smallDataDf:
+    public static Dataset<Row> twiceAsBigDf;
     public static Dataset<Row> MB20Df;
     public static Dataset<Row> MB100Df;
     public static Dataset<Row> GB3Df;
@@ -84,6 +86,7 @@ public class SparkBigQueryWriteTest {
         smallDataDf = spark.read().format("com.google.cloud.spark.bigquery.v2.BigQueryDataSourceV2")
                 .option("table", SMALL_DATA_ID)
                 .load();
+        twiceAsBigDf = smallDataDf.unionAll(smallDataDf);
         MB20Df = spark.read().format("com.google.cloud.spark.bigquery.v2.BigQueryDataSourceV2")
                 .option("table", MB20_ID)
                 .load().drop("startTime").drop("createdAt").drop("updatedAt")/*.coalesce(20)*/.toDF();
@@ -117,6 +120,7 @@ public class SparkBigQueryWriteTest {
         copyTable(smallDataTableId, overWriteTableId);
     }
 
+    // Copy operation copied from BigQueryClient.
     public static void copyTable(TableId from, TableId to) {
         String queryFormat = "INSERT INTO `%s`\n" + "SELECT * FROM `%s`";
         QueryJobConfiguration queryConfig =
@@ -188,8 +192,6 @@ public class SparkBigQueryWriteTest {
     public void testSparkAppendSaveMode() throws Exception {
         String writeTo = "append";
 
-        Dataset<Row> twiceAsBigDf = smallDataDf.unionAll(smallDataDf);
-
         Dataset<Row> expectedDF = twiceAsBigDf;
 
         smallDataDf.write().format("com.google.cloud.spark.bigquery.v2.BigQueryInsertAllDataSourceV2")
@@ -221,8 +223,6 @@ public class SparkBigQueryWriteTest {
     public void testSparkOverWriteSaveMode() throws Exception {
         String writeTo = OVERWRITE_TABLE;
 
-        Dataset<Row> twiceAsBigDf = smallDataDf.unionAll(smallDataDf);
-
         Dataset<Row> expectedDF = twiceAsBigDf;
 
         twiceAsBigDf.write().format("com.google.cloud.spark.bigquery.v2.BigQueryInsertAllDataSourceV2")
@@ -247,8 +247,6 @@ public class SparkBigQueryWriteTest {
     @Test
     public void testSparkWriteIgnoreSaveMode() throws Exception {
         String writeTo = "ignore";
-
-        Dataset<Row> twiceAsBigDf = smallDataDf.unionAll(smallDataDf);
 
         Dataset<Row> expectedDF = smallDataDf;
 
