@@ -7,6 +7,7 @@ import org.apache.spark.sql.catalyst.util.ArrayData;
 import org.apache.spark.sql.catalyst.util.DateTimeUtils$;
 import org.apache.spark.sql.types.*;
 import org.apache.spark.unsafe.types.UTF8String;
+import org.apache.spark.util.SizeEstimator;
 
 import java.io.IOException;
 import java.nio.charset.Charset;
@@ -18,6 +19,7 @@ public class SparkInsertAllBuilder {
   private static final Charset UTF_8 = StandardCharsets.UTF_8;
   private static final String MAPTYPE_ERROR_MESSAGE = "MapType is unsupported.";
   private static final long MAX_BATCH_ROW_COUNT = 500;
+  private static final long MAX_BATCH_BYTES = 5L * 1000L * 1000L; // 5MB
 
   private final StructType sparkSchema;
   private final TableId tableId;
@@ -25,6 +27,8 @@ public class SparkInsertAllBuilder {
 
   private InsertAllRequest.Builder insertAllRequestBuilder;
   private long currentRequestRowCount = 0;
+  private long currentRequestByteCount = 0;
+
   private long committedRowCount = 0;
 
   public SparkInsertAllBuilder(
@@ -37,13 +41,26 @@ public class SparkInsertAllBuilder {
   }
 
   public void addRow(InternalRow record) throws IOException {
-    insertAllRequestBuilder.addRow(internalRowToInsertAllRecord(sparkSchema, record));
+    Map<String, Object> insertAllRecord = internalRowToInsertAllRecord(sparkSchema, record);
+    long recordByteCount = estimateSize(insertAllRecord.values());
 
-    currentRequestRowCount++;
-
-    if (currentRequestRowCount == MAX_BATCH_ROW_COUNT) {
+    if (currentRequestRowCount == MAX_BATCH_ROW_COUNT
+        || currentRequestByteCount + recordByteCount >= MAX_BATCH_BYTES) {
+      // TODO: Add limit / check / error for a single row that might be exceeding size quotas...
       commit();
     }
+
+    insertAllRequestBuilder.addRow(insertAllRecord);
+    currentRequestByteCount += recordByteCount;
+    currentRequestRowCount++;
+  }
+
+  private long estimateSize(Collection<Object> values) {
+    long totalBytes = 0;
+    for (Object value : values) {
+      totalBytes += SizeEstimator.estimate(value);
+    }
+    return totalBytes;
   }
 
   public void commit() throws IOException {
