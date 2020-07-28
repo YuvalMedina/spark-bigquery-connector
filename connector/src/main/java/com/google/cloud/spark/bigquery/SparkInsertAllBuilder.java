@@ -22,38 +22,50 @@ public class SparkInsertAllBuilder {
 
   private static final Charset UTF_8 = StandardCharsets.UTF_8;
   private static final String MAPTYPE_ERROR_MESSAGE = "MapType is unsupported.";
-  private static final long MAX_BATCH_ROW_COUNT = 500;
-  private static final long MAX_BATCH_BYTES = 5L * 1000L * 1000L; // 5MB
 
   private final StructType sparkSchema;
   private final TableId tableId;
   private final BigQueryClient bigQueryClient;
+  private final long maxBatchRowCount;
+  private final long maxBatchSizeInBytes;
+
+  // This is a changing limit based on the estimated average row-size in bytes, as calculated by
+  // recordSizeEstimator.
+  private long actualRowLimit;
 
   private InsertAllRequest.Builder insertAllRequestBuilder;
   private long currentRequestRowCount = 0;
 
   private long committedRowCount = 0;
 
-  private RecordSizeEstimator recordSizeEstimator = new RecordSizeEstimator();
+  private RowSizeEstimator rowSizeEstimator;
 
   public SparkInsertAllBuilder(
-      StructType sparkSchema, TableId tableId, BigQueryClient bigQueryClient) {
+      StructType sparkSchema,
+      TableId tableId,
+      BigQueryClient bigQueryClient,
+      int numberOfFirstRowsToEstimate,
+      long maxWriteBatchSizeInBytes,
+      int maxWriteBatchRowCount) {
     this.sparkSchema = sparkSchema;
     this.tableId = tableId;
     this.bigQueryClient = bigQueryClient;
+    this.maxBatchRowCount = maxWriteBatchRowCount;
+    this.maxBatchSizeInBytes = maxWriteBatchSizeInBytes;
 
+    this.actualRowLimit = maxWriteBatchRowCount;
     this.insertAllRequestBuilder = InsertAllRequest.newBuilder(tableId);
+    this.rowSizeEstimator = new RowSizeEstimator(numberOfFirstRowsToEstimate);
   }
 
   public void addRow(InternalRow record) throws IOException {
     Map<String, Object> insertAllRecord = internalRowToInsertAllRecord(sparkSchema, record);
 
-    recordSizeEstimator.updateEstimate(insertAllRecord);
+    rowSizeEstimator.updateRowSizeEstimateAndActualRowLimit(insertAllRecord);
     insertAllRequestBuilder.addRow(insertAllRecord);
     currentRequestRowCount++;
 
-    if (currentRequestRowCount == MAX_BATCH_ROW_COUNT
-        || currentRequestRowCount * recordSizeEstimator.averageRecordSize >= MAX_BATCH_BYTES) {
+    if (currentRequestRowCount == actualRowLimit) {
       // TODO: Add mechanism / error for a single row that might be exceeding size quotas...
       commit();
     }
@@ -63,9 +75,6 @@ public class SparkInsertAllBuilder {
     if (currentRequestRowCount == 0) {
       return;
     }
-
-    // logger.debug("Commit with rowcount {} and bytecount {}", currentRequestRowCount,
-    // currentRequestByteCount);
 
     InsertAllResponse insertAllResponse = bigQueryClient.insertAll(insertAllRequestBuilder.build());
     if (insertAllResponse.hasErrors()) {
@@ -154,7 +163,7 @@ public class SparkInsertAllBuilder {
 
     if (sparkType instanceof DecimalType) {
       return new String(sparkValue.toString().getBytes(), UTF_8);
-    } // TODO:
+    }
 
     if (sparkType instanceof BooleanType) {
       return sparkValue;
@@ -190,30 +199,61 @@ public class SparkInsertAllBuilder {
     }
   }
 
-  class RecordSizeEstimator {
-    long averageRecordSize; // in bytes
-    int estimatesDone;
+  class RowSizeEstimator {
+    final int numberOfRowsToEstimate;
 
-    RecordSizeEstimator() {
-      estimatesDone = 0;
+    AverageFraction averageRowSizeInBytes = new AverageFraction(); // in bytes
+    int estimatesCount;
+
+    RowSizeEstimator(int numberOfRowsToEstimate) {
+      this.numberOfRowsToEstimate = numberOfRowsToEstimate;
+      this.estimatesCount = 0;
     }
 
-    void updateEstimate(Map<String, Object> insertAllRecord) {
-      if (estimatesDone < 10) {
-        averageRecordSize =
-            ((averageRecordSize * estimatesDone) + estimateOneRecord(insertAllRecord))
-                / (estimatesDone + 1);
-        estimatesDone++;
-        // logger.debug("Current record estimate: {}", averageRecordSize);
+    void updateRowSizeEstimateAndActualRowLimit(Map<String, Object> insertAllRecord) {
+      if (estimatesCount < numberOfRowsToEstimate) {
+        averageRowSizeInBytes.addToAverage(SizeEstimator.estimate(insertAllRecord));
+        // TODO: take 3 sizes: Shakespeare w 1 byte per row, other tables w 1kB row, 10kB rows. Need
+        // to adjust max_batch_size?
+        // TODO: fundamental assumption: all records are ~same size... magic number: 10? 1? batch
+        // size? max_byte? make parameters.
+
+        // pick the smaller of the two limits:
+        // 1. how many rows would fit within the maximum number of bytes per batch
+        // 2. the actual limit on the number of rows per batch
+        actualRowLimit =
+            Math.min(maxBatchSizeInBytes / averageRowSizeInBytes.getAverage(), maxBatchRowCount);
+
+        estimatesCount++;
+
+        logger.debug(
+            "Average record size estimate in bytes: {}. Actual row limit: {}",
+            averageRowSizeInBytes.getAverage(),
+            actualRowLimit);
       }
     }
 
-    long estimateOneRecord(Map<String, Object> insertAllRecord) {
-      long recordByteCounter = 0;
-      for (Object value : insertAllRecord.values()) {
-        recordByteCounter += SizeEstimator.estimate(value);
+    class AverageFraction {
+      List<Long> sizes = new ArrayList<>();
+      long count = 0;
+
+      AverageFraction() {}
+
+      void addToAverage(long size) {
+        sizes.add(size);
+        count++;
       }
-      return recordByteCounter;
+
+      long getAverage() {
+        if (count == 0) {
+          throw new RuntimeException("Cannot access a moving average of no variables.");
+        }
+        long sum = 0;
+        for (long size : sizes) { // TODO: catch overflow.
+          sum += size;
+        }
+        return sum / count;
+      }
     }
   }
 }

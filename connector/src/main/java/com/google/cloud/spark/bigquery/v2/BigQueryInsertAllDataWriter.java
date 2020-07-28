@@ -31,7 +31,10 @@ public class BigQueryInsertAllDataWriter implements DataWriter<InternalRow> {
       StructType sparkSchema,
       int partitionId,
       long taskId,
-      long epochId) {
+      long epochId,
+      int numberOfFirstRowsToEstimate,
+      long maxWriteBatchSizeInBytes,
+      int maxWriteBatchRowCount) {
     this.tableId = tableId;
     this.sparkSchema = sparkSchema;
     this.partitionId = partitionId;
@@ -40,7 +43,12 @@ public class BigQueryInsertAllDataWriter implements DataWriter<InternalRow> {
 
     this.sparkInsertAllBuilder =
         new SparkInsertAllBuilder(
-            sparkSchema, tableId, bigQueryClientFactory.createBigQueryClient());
+            sparkSchema,
+            tableId,
+            bigQueryClientFactory.createBigQueryClient(),
+            numberOfFirstRowsToEstimate,
+            maxWriteBatchSizeInBytes,
+            maxWriteBatchRowCount);
   }
 
   @Override

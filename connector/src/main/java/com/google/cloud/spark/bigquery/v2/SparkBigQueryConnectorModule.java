@@ -102,7 +102,7 @@ public class SparkBigQueryConnectorModule implements Module {
       SparkBigQueryConfig config,
       BigQueryClientFactory bigQueryClientFactory) {
     return new BigQueryInsertAllDataSourceWriter(
-        bigQueryClientFactory, config.getTableId(), writeUUID, saveMode, schema.get());
+        bigQueryClientFactory, config, writeUUID, saveMode, schema.get());
   }
 
   @Singleton

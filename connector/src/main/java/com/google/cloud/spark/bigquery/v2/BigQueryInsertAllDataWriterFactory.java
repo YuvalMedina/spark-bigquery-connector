@@ -13,17 +13,26 @@ public class BigQueryInsertAllDataWriterFactory implements DataWriterFactory<Int
   private final Table table;
   private final StructType sparkSchema;
   private final boolean ignoreInputs;
+  private final int numberOfFirstRowsToEstimate;
+  private final long maxWriteBatchSizeInBytes;
+  private final int maxWriteBatchRowCount;
 
   public BigQueryInsertAllDataWriterFactory(
       BigQueryClientFactory bigQueryClientFactory,
       Table table,
       StructType sparkSchema,
-      boolean ignoreInputs) {
+      boolean ignoreInputs,
+      int numberOfFirstRowsToEstimate,
+      long maxWriteBatchSizeInBytes,
+      int maxWriteBatchRowCount) {
     this.bigQueryClientFactory = bigQueryClientFactory;
     // TODO: can be null:
     this.table = table;
     this.sparkSchema = sparkSchema;
     this.ignoreInputs = ignoreInputs;
+    this.numberOfFirstRowsToEstimate = numberOfFirstRowsToEstimate;
+    this.maxWriteBatchSizeInBytes = maxWriteBatchSizeInBytes;
+    this.maxWriteBatchRowCount = maxWriteBatchRowCount;
   }
 
   @Override
@@ -32,6 +41,14 @@ public class BigQueryInsertAllDataWriterFactory implements DataWriterFactory<Int
       return new NoOpDataWriter();
     }
     return new BigQueryInsertAllDataWriter(
-        bigQueryClientFactory, table.getTableId(), sparkSchema, partitionId, taskId, epochId);
+        bigQueryClientFactory,
+        table.getTableId(),
+        sparkSchema,
+        partitionId,
+        taskId,
+        epochId,
+        numberOfFirstRowsToEstimate,
+        maxWriteBatchSizeInBytes,
+        maxWriteBatchRowCount);
   }
 }

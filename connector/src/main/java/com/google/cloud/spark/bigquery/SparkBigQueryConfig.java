@@ -87,6 +87,10 @@ public class SparkBigQueryConfig implements BigQueryConfig {
   ImmutableList<JobInfo.SchemaUpdateOption> loadSchemaUpdateOptions = ImmutableList.of();
   int viewExpirationTimeInHours = 24;
   int maxReadRowsRetries = 3;
+  // for insertAll writing:
+  int numberOfFirstRowsToEstimate = 10;
+  long maxWriteBatchSizeInBytes = 5L * 1000L * 1000L;
+  int maxWriteBatchRowCount = 500;
 
   private SparkBigQueryConfig() {
     // empty
@@ -367,6 +371,18 @@ public class SparkBigQueryConfig implements BigQueryConfig {
 
   public int getMaxReadRowsRetries() {
     return maxReadRowsRetries;
+  }
+
+  public int getNumberOfFirstRowsToEstimate() {
+    return numberOfFirstRowsToEstimate;
+  }
+
+  public long getMaxWriteBatchSizeInBytes() {
+    return maxWriteBatchSizeInBytes;
+  }
+
+  public int getMaxWriteBatchRowCount() {
+    return maxWriteBatchRowCount;
   }
 
   public ReadSessionCreatorConfig toReadSessionCreatorConfig() {

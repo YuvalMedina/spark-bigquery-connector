@@ -4,6 +4,7 @@ import com.google.cloud.RetryOption;
 import com.google.cloud.bigquery.*;
 import com.google.cloud.bigquery.connector.common.BigQueryClient;
 import com.google.cloud.bigquery.connector.common.BigQueryClientFactory;
+import com.google.cloud.spark.bigquery.SparkBigQueryConfig;
 import com.google.common.base.Preconditions;
 import org.apache.spark.sql.SaveMode;
 import org.apache.spark.sql.catalyst.InternalRow;
@@ -29,6 +30,10 @@ public class BigQueryInsertAllDataSourceWriter implements DataSourceWriter {
   private final StructType sparkSchema;
   private final String writeUUID;
 
+  private final int numberOfFirstRowsToEstimate;
+  private final long maxWriteBatchSizeInBytes;
+  private final int maxWriteBatchRowCount;
+
   private Table writingTable;
 
   enum WriteMode {
@@ -38,20 +43,24 @@ public class BigQueryInsertAllDataSourceWriter implements DataSourceWriter {
     DESTINATION_DID_NOT_EXIST;
   }
 
-  private WriteMode writeMode = WriteMode.DESTINATION_DID_NOT_EXIST;
+  private WriteMode writeMode;
 
   public BigQueryInsertAllDataSourceWriter(
       BigQueryClientFactory bigQueryClientFactory,
-      TableId destinationTableId,
+      SparkBigQueryConfig config,
       String writeUUID,
       SaveMode saveMode,
       StructType sparkSchema) {
     this.bigQueryClient = bigQueryClientFactory.createBigQueryClient();
     this.bigQueryClientFactory = bigQueryClientFactory;
 
-    this.destinationTableId = destinationTableId;
+    this.destinationTableId = config.getTableId();
     this.writeUUID = writeUUID;
     this.sparkSchema = sparkSchema;
+
+    this.numberOfFirstRowsToEstimate = config.getNumberOfFirstRowsToEstimate();
+    this.maxWriteBatchSizeInBytes = config.getMaxWriteBatchSizeInBytes();
+    this.maxWriteBatchRowCount = config.getMaxWriteBatchRowCount();
 
     Schema bigQuerySchema = toBigQuerySchema(sparkSchema);
     this.writingTable = getOrCreateTable(saveMode, destinationTableId, bigQuerySchema);
@@ -59,7 +68,7 @@ public class BigQueryInsertAllDataSourceWriter implements DataSourceWriter {
 
   private Table getOrCreateTable(
       SaveMode saveMode, TableId destinationTableId, Schema bigQuerySchema) {
-    if (bigQueryClient.tableExists(destinationTableId)) { // TODO schema validation.
+    if (bigQueryClient.tableExists(destinationTableId)) {
       switch (saveMode) {
         case Ignore:
           this.writeMode = WriteMode.IGNORE_INPUTS;
@@ -71,8 +80,7 @@ public class BigQueryInsertAllDataSourceWriter implements DataSourceWriter {
           this.writeMode = WriteMode.OVERWRITE;
           break;
         case ErrorIfExists:
-          throw new RuntimeException(
-              "Table already exists in BigQuery."); // TODO: should this be a RuntimeException?
+          throw new RuntimeException("Table already exists in BigQuery.");
       }
       Preconditions.checkArgument(
           bigQueryClient
@@ -95,7 +103,10 @@ public class BigQueryInsertAllDataSourceWriter implements DataSourceWriter {
         bigQueryClientFactory,
         writingTable,
         sparkSchema,
-        writeMode.equals(WriteMode.IGNORE_INPUTS));
+        writeMode.equals(WriteMode.IGNORE_INPUTS),
+        numberOfFirstRowsToEstimate,
+        maxWriteBatchSizeInBytes,
+        maxWriteBatchRowCount);
   }
 
   @Override
