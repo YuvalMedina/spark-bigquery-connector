@@ -8,6 +8,8 @@ import org.apache.spark.sql.catalyst.util.DateTimeUtils$;
 import org.apache.spark.sql.types.*;
 import org.apache.spark.unsafe.types.UTF8String;
 import org.apache.spark.util.SizeEstimator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.charset.Charset;
@@ -16,10 +18,13 @@ import java.util.*;
 
 public class SparkInsertAllBuilder {
 
+  final Logger logger = LoggerFactory.getLogger(SparkInsertAllBuilder.class);
+
   private static final Charset UTF_8 = StandardCharsets.UTF_8;
   private static final String MAPTYPE_ERROR_MESSAGE = "MapType is unsupported.";
   private static final long MAX_BATCH_ROW_COUNT = 500;
   private static final long MAX_BATCH_BYTES = 5L * 1000L * 1000L; // 5MB
+  private static final int NULL_BYTES = 4;
 
   private final StructType sparkSchema;
   private final TableId tableId;
@@ -30,6 +35,8 @@ public class SparkInsertAllBuilder {
   private long currentRequestByteCount = 0;
 
   private long committedRowCount = 0;
+
+  private RecordSizeEstimator recordSizeEstimator = new RecordSizeEstimator();
 
   public SparkInsertAllBuilder(
       StructType sparkSchema, TableId tableId, BigQueryClient bigQueryClient) {
@@ -42,7 +49,7 @@ public class SparkInsertAllBuilder {
 
   public void addRow(InternalRow record) throws IOException {
     Map<String, Object> insertAllRecord = internalRowToInsertAllRecord(sparkSchema, record);
-    long recordByteCount = estimateSize(insertAllRecord.values());
+    long recordByteCount = recordSizeEstimator.returnEstimate(insertAllRecord.values());
 
     if (currentRequestRowCount == MAX_BATCH_ROW_COUNT
         || currentRequestByteCount + recordByteCount >= MAX_BATCH_BYTES) {
@@ -55,18 +62,12 @@ public class SparkInsertAllBuilder {
     currentRequestRowCount++;
   }
 
-  private long estimateSize(Collection<Object> values) {
-    long totalBytes = 0;
-    for (Object value : values) {
-      totalBytes += SizeEstimator.estimate(value);
-    }
-    return totalBytes;
-  }
-
   public void commit() throws IOException {
     if (currentRequestRowCount == 0) {
       return;
     }
+
+    // logger.debug("Commit with rowcount {} and bytecount {}", currentRequestRowCount, currentRequestByteCount);
 
     InsertAllResponse insertAllResponse = bigQueryClient.insertAll(insertAllRequestBuilder.build());
     if (insertAllResponse.hasErrors()) {
@@ -75,6 +76,7 @@ public class SparkInsertAllBuilder {
     insertAllRequestBuilder = InsertAllRequest.newBuilder(tableId);
     committedRowCount += currentRequestRowCount;
     currentRequestRowCount = 0;
+    currentRequestByteCount = 0;
   }
 
   public long getCommittedRows() {
@@ -188,6 +190,45 @@ public class SparkInsertAllBuilder {
         stringBuilder.append(String.format("Row: %d\n\tError: %s\n\n", row, insertErrors.get(row)));
       }
       return stringBuilder.toString();
+    }
+  }
+
+  class RecordSizeEstimator {
+    long recordSize;
+    int estimatesDone;
+
+    int numberOfTimesCalled;
+    final int calculateEvery = 20000;
+
+    RecordSizeEstimator() {
+      estimatesDone = 0;
+    }
+
+    long returnEstimate(Collection<Object> values) {
+      factorSize(values);
+      return recordSize;
+    }
+
+    void factorSize(Collection<Object> values) {
+      if (estimatesDone == 0) {
+        recordSize = estimateOneRecord(values);
+        estimatesDone = 1;
+      } else if (estimatesDone < 10 || numberOfTimesCalled == calculateEvery) {
+        recordSize =
+            ((recordSize * estimatesDone) + estimateOneRecord(values)) / (estimatesDone + 1);
+        logger.debug("Current record size: {}", recordSize);
+        estimatesDone++;
+        numberOfTimesCalled = 0;
+      }
+      numberOfTimesCalled++;
+    }
+
+    long estimateOneRecord(Collection<Object> values) {
+      long recordByteCounter = 0;
+      for (Object value : values) {
+        recordByteCounter += SizeEstimator.estimate(value);
+      }
+      return recordByteCounter;
     }
   }
 }
