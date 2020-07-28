@@ -31,7 +31,6 @@ public class SparkInsertAllBuilder {
 
   private InsertAllRequest.Builder insertAllRequestBuilder;
   private long currentRequestRowCount = 0;
-  private long currentRequestByteCount = 0;
 
   private long committedRowCount = 0;
 
@@ -48,17 +47,18 @@ public class SparkInsertAllBuilder {
 
   public void addRow(InternalRow record) throws IOException {
     Map<String, Object> insertAllRecord = internalRowToInsertAllRecord(sparkSchema, record);
-    long recordByteCount = recordSizeEstimator.returnEstimate(insertAllRecord);
+
+    if (committedRowCount < 10) {
+      recordSizeEstimator.updateEstimate(insertAllRecord);
+    }
+    insertAllRequestBuilder.addRow(insertAllRecord);
+    currentRequestRowCount++;
 
     if (currentRequestRowCount == MAX_BATCH_ROW_COUNT
-        || currentRequestByteCount + recordByteCount >= MAX_BATCH_BYTES) {
-      // TODO: Add limit / check / error for a single row that might be exceeding size quotas...
+        || currentRequestRowCount * recordSizeEstimator.averageRecordSize >= MAX_BATCH_BYTES) {
+      // TODO: Add mechanism / error for a single row that might be exceeding size quotas...
       commit();
     }
-
-    insertAllRequestBuilder.addRow(insertAllRecord);
-    currentRequestByteCount += recordByteCount;
-    currentRequestRowCount++;
   }
 
   public void commit() throws IOException {
@@ -68,17 +68,13 @@ public class SparkInsertAllBuilder {
 
     // logger.debug("Commit with rowcount {} and bytecount {}", currentRequestRowCount, currentRequestByteCount);
 
-    //long tick = System.nanoTime();
     InsertAllResponse insertAllResponse = bigQueryClient.insertAll(insertAllRequestBuilder.build());
-    //long tock = System.nanoTime();
-    //logger.debug("Latency {}", (tock-tick));
     if (insertAllResponse.hasErrors()) {
       throw new SparkInsertAllException(insertAllResponse.getInsertErrors());
     }
     insertAllRequestBuilder = InsertAllRequest.newBuilder(tableId);
     committedRowCount += currentRequestRowCount;
     currentRequestRowCount = 0;
-    currentRequestByteCount = 0;
   }
 
   public long getCommittedRows() {
@@ -196,24 +192,19 @@ public class SparkInsertAllBuilder {
   }
 
   class RecordSizeEstimator {
-    long recordSize;
+    long averageRecordSize; // in bytes
     int estimatesDone;
 
     RecordSizeEstimator() {
       estimatesDone = 0;
     }
 
-    long returnEstimate(Map<String, Object> insertAllRecord) {
-      factorSize(insertAllRecord);
-      return recordSize;
-    }
-
-    void factorSize(Map<String, Object> insertAllRecord) {
+    void updateEstimate(Map<String, Object> insertAllRecord) {
       if (estimatesDone < 10) {
-        recordSize =
-            ((recordSize * estimatesDone) + estimateOneRecord(insertAllRecord)) / (estimatesDone + 1);
+        averageRecordSize =
+            ((averageRecordSize * estimatesDone) + estimateOneRecord(insertAllRecord)) / (estimatesDone + 1);
         estimatesDone++;
-        logger.debug("Current record estimate: {}", recordSize);
+        logger.debug("Current record estimate: {}", averageRecordSize);
       }
     }
 
