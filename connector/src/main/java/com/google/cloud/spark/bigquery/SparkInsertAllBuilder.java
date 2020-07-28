@@ -22,7 +22,7 @@ public class SparkInsertAllBuilder {
 
   private static final Charset UTF_8 = StandardCharsets.UTF_8;
   private static final String MAPTYPE_ERROR_MESSAGE = "MapType is unsupported.";
-  private static final long MAX_BATCH_ROW_COUNT = 20;
+  private static final long MAX_BATCH_ROW_COUNT = 500;
   private static final long MAX_BATCH_BYTES = 5L * 1000L * 1000L; // 5MB
 
   private final StructType sparkSchema;
@@ -48,9 +48,7 @@ public class SparkInsertAllBuilder {
   public void addRow(InternalRow record) throws IOException {
     Map<String, Object> insertAllRecord = internalRowToInsertAllRecord(sparkSchema, record);
 
-    if (committedRowCount < 10) {
-      recordSizeEstimator.updateEstimate(insertAllRecord);
-    }
+    recordSizeEstimator.updateEstimate(insertAllRecord);
     insertAllRequestBuilder.addRow(insertAllRecord);
     currentRequestRowCount++;
 
@@ -66,7 +64,8 @@ public class SparkInsertAllBuilder {
       return;
     }
 
-    // logger.debug("Commit with rowcount {} and bytecount {}", currentRequestRowCount, currentRequestByteCount);
+    // logger.debug("Commit with rowcount {} and bytecount {}", currentRequestRowCount,
+    // currentRequestByteCount);
 
     InsertAllResponse insertAllResponse = bigQueryClient.insertAll(insertAllRequestBuilder.build());
     if (insertAllResponse.hasErrors()) {
@@ -202,9 +201,10 @@ public class SparkInsertAllBuilder {
     void updateEstimate(Map<String, Object> insertAllRecord) {
       if (estimatesDone < 10) {
         averageRecordSize =
-            ((averageRecordSize * estimatesDone) + estimateOneRecord(insertAllRecord)) / (estimatesDone + 1);
+            ((averageRecordSize * estimatesDone) + estimateOneRecord(insertAllRecord))
+                / (estimatesDone + 1);
         estimatesDone++;
-        logger.debug("Current record estimate: {}", averageRecordSize);
+        // logger.debug("Current record estimate: {}", averageRecordSize);
       }
     }
 
