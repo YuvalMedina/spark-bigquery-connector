@@ -309,7 +309,7 @@ public class SparkBigQueryWriteTest {
 
         long tick = System.nanoTime();
 
-        MB100Df.write().format("com.google.cloud.spark.bigquery.v2.BigQueryInsertAllDataSourceV2")
+        MB20Df.write().format("com.google.cloud.spark.bigquery.v2.BigQueryInsertAllDataSourceV2")
                 .option("table", writeTo)
                 .option("dataset", DATASET)
                 .option("project", PROJECT)
@@ -353,7 +353,7 @@ public class SparkBigQueryWriteTest {
 
         long tick = System.nanoTime();
 
-        MB100Df.write().format("com.google.cloud.spark.bigquery.v2.BigQueryInsertAllDataSourceV2")
+        GB3Df.write().format("com.google.cloud.spark.bigquery.v2.BigQueryInsertAllDataSourceV2")
                 .option("table", writeTo)
                 .option("dataset", DATASET)
                 .option("project", PROJECT)
@@ -374,7 +374,7 @@ public class SparkBigQueryWriteTest {
 
         long tick = System.nanoTime();
 
-        MB100Df.write().format("com.google.cloud.spark.bigquery.v2.BigQueryInsertAllDataSourceV2")
+        GB20Df.write().format("com.google.cloud.spark.bigquery.v2.BigQueryInsertAllDataSourceV2")
                 .option("table", writeTo)
                 .option("dataset", DATASET)
                 .option("project", PROJECT)
@@ -395,7 +395,7 @@ public class SparkBigQueryWriteTest {
 
         long tick = System.nanoTime();
 
-        MB100Df.write().format("com.google.cloud.spark.bigquery.v2.BigQueryInsertAllDataSourceV2")
+        GB250Df.write().format("com.google.cloud.spark.bigquery.v2.BigQueryInsertAllDataSourceV2")
                 .option("table", writeTo)
                 .option("dataset", DATASET)
                 .option("project", PROJECT)
