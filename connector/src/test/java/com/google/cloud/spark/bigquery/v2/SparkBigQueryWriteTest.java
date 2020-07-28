@@ -307,12 +307,18 @@ public class SparkBigQueryWriteTest {
     public void testSparkBigQueryWrite20MB() throws Exception {
         String writeTo = "20MB";
 
-        MB20Df.write().format("com.google.cloud.spark.bigquery.v2.BigQueryInsertAllDataSourceV2")
+        long tick = System.nanoTime();
+
+        MB100Df.write().format("com.google.cloud.spark.bigquery.v2.BigQueryInsertAllDataSourceV2")
                 .option("table", writeTo)
                 .option("dataset", DATASET)
                 .option("project", PROJECT)
                 .mode(SaveMode.Overwrite)
                 .save();
+
+        long tock = System.nanoTime();
+
+        logger.debug("Time spent writing: "+(tock-tick));
 
         // TODO: simple num bytes print line
 
@@ -324,12 +330,18 @@ public class SparkBigQueryWriteTest {
     public void testSparkBigQueryWrite100MB() throws Exception {
         String writeTo = "100MB";
 
+        long tick = System.nanoTime();
+
         MB100Df.write().format("com.google.cloud.spark.bigquery.v2.BigQueryInsertAllDataSourceV2")
                 .option("table", writeTo)
                 .option("dataset", DATASET)
                 .option("project", PROJECT)
                 .mode(SaveMode.Overwrite)
                 .save();
+
+        long tock = System.nanoTime();
+
+        logger.debug("Time spent writing: "+(tock-tick));
 
         assertThat(bigquery.getTable(TableId.of(PROJECT, DATASET, writeTo)).getNumBytes()
                 == bigquery.getTable(TableId.of(BIGQUERY_PUBLIC_DATA, MB100_DATASET, MB100_TABLE)).getNumBytes());
@@ -339,12 +351,18 @@ public class SparkBigQueryWriteTest {
     public void testSparkBigQueryWrite3GB() throws Exception {
         String writeTo = "3GB";
 
-        GB3Df.write().format("com.google.cloud.spark.bigquery.v2.BigQueryInsertAllDataSourceV2")
+        long tick = System.nanoTime();
+
+        MB100Df.write().format("com.google.cloud.spark.bigquery.v2.BigQueryInsertAllDataSourceV2")
                 .option("table", writeTo)
                 .option("dataset", DATASET)
                 .option("project", PROJECT)
                 .mode(SaveMode.Overwrite)
                 .save();
+
+        long tock = System.nanoTime();
+
+        logger.debug("Time spent writing: "+(tock-tick));
 
         assertThat(bigquery.getTable(TableId.of(PROJECT, DATASET, writeTo)).getNumBytes()
                 == bigquery.getTable(TableId.of(BIGQUERY_PUBLIC_DATA, GB3_DATASET, GB3_TABLE)).getNumBytes());
@@ -354,12 +372,18 @@ public class SparkBigQueryWriteTest {
     public void testSparkBigQueryWrite20GB() throws Exception {
         String writeTo = "20GB";
 
-        GB20Df.write().format("com.google.cloud.spark.bigquery.v2.BigQueryInsertAllDataSourceV2")
+        long tick = System.nanoTime();
+
+        MB100Df.write().format("com.google.cloud.spark.bigquery.v2.BigQueryInsertAllDataSourceV2")
                 .option("table", writeTo)
                 .option("dataset", DATASET)
                 .option("project", PROJECT)
                 .mode(SaveMode.Overwrite)
                 .save();
+
+        long tock = System.nanoTime();
+
+        logger.debug("Time spent writing: "+(tock-tick));
 
         assertThat(bigquery.getTable(TableId.of(PROJECT, DATASET, writeTo)).getNumBytes()
                 == bigquery.getTable(TableId.of(BIGQUERY_PUBLIC_DATA, GB20_DATASET, GB20_TABLE)).getNumBytes());
@@ -369,12 +393,18 @@ public class SparkBigQueryWriteTest {
     public void testSparkBigQueryWrite250GB() throws Exception {
         String writeTo = "250GB";
 
-        GB250Df.write().format("com.google.cloud.spark.bigquery.v2.BigQueryInsertAllDataSourceV2")
+        long tick = System.nanoTime();
+
+        MB100Df.write().format("com.google.cloud.spark.bigquery.v2.BigQueryInsertAllDataSourceV2")
                 .option("table", writeTo)
                 .option("dataset", DATASET)
                 .option("project", PROJECT)
                 .mode(SaveMode.Overwrite)
                 .save();
+
+        long tock = System.nanoTime();
+
+        logger.debug("Time spent writing: "+(tock-tick));
 
         assertThat(bigquery.getTable(TableId.of(PROJECT, DATASET, writeTo)).getNumBytes()
                 == bigquery.getTable(TableId.of(BIGQUERY_PUBLIC_DATA, GB250_DATASET, GB250_TABLE)).getNumBytes());

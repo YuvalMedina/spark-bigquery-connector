@@ -22,9 +22,8 @@ public class SparkInsertAllBuilder {
 
   private static final Charset UTF_8 = StandardCharsets.UTF_8;
   private static final String MAPTYPE_ERROR_MESSAGE = "MapType is unsupported.";
-  private static final long MAX_BATCH_ROW_COUNT = 500;
+  private static final long MAX_BATCH_ROW_COUNT = 20;
   private static final long MAX_BATCH_BYTES = 5L * 1000L * 1000L; // 5MB
-  private static final int NULL_BYTES = 4;
 
   private final StructType sparkSchema;
   private final TableId tableId;
@@ -49,7 +48,7 @@ public class SparkInsertAllBuilder {
 
   public void addRow(InternalRow record) throws IOException {
     Map<String, Object> insertAllRecord = internalRowToInsertAllRecord(sparkSchema, record);
-    long recordByteCount = recordSizeEstimator.returnEstimate(insertAllRecord.values());
+    long recordByteCount = recordSizeEstimator.returnEstimate(insertAllRecord);
 
     if (currentRequestRowCount == MAX_BATCH_ROW_COUNT
         || currentRequestByteCount + recordByteCount >= MAX_BATCH_BYTES) {
@@ -69,7 +68,10 @@ public class SparkInsertAllBuilder {
 
     // logger.debug("Commit with rowcount {} and bytecount {}", currentRequestRowCount, currentRequestByteCount);
 
+    //long tick = System.nanoTime();
     InsertAllResponse insertAllResponse = bigQueryClient.insertAll(insertAllRequestBuilder.build());
+    //long tock = System.nanoTime();
+    //logger.debug("Latency {}", (tock-tick));
     if (insertAllResponse.hasErrors()) {
       throw new SparkInsertAllException(insertAllResponse.getInsertErrors());
     }
@@ -197,35 +199,27 @@ public class SparkInsertAllBuilder {
     long recordSize;
     int estimatesDone;
 
-    int numberOfTimesCalled;
-    final int calculateEvery = 20000;
-
     RecordSizeEstimator() {
       estimatesDone = 0;
     }
 
-    long returnEstimate(Collection<Object> values) {
-      factorSize(values);
+    long returnEstimate(Map<String, Object> insertAllRecord) {
+      factorSize(insertAllRecord);
       return recordSize;
     }
 
-    void factorSize(Collection<Object> values) {
-      if (estimatesDone == 0) {
-        recordSize = estimateOneRecord(values);
-        estimatesDone = 1;
-      } else if (estimatesDone < 10 || numberOfTimesCalled == calculateEvery) {
+    void factorSize(Map<String, Object> insertAllRecord) {
+      if (estimatesDone < 10) {
         recordSize =
-            ((recordSize * estimatesDone) + estimateOneRecord(values)) / (estimatesDone + 1);
-        logger.debug("Current record size: {}", recordSize);
+            ((recordSize * estimatesDone) + estimateOneRecord(insertAllRecord)) / (estimatesDone + 1);
         estimatesDone++;
-        numberOfTimesCalled = 0;
+        logger.debug("Current record estimate: {}", recordSize);
       }
-      numberOfTimesCalled++;
     }
 
-    long estimateOneRecord(Collection<Object> values) {
+    long estimateOneRecord(Map<String, Object> insertAllRecord) {
       long recordByteCounter = 0;
-      for (Object value : values) {
+      for (Object value : insertAllRecord.values()) {
         recordByteCounter += SizeEstimator.estimate(value);
       }
       return recordByteCounter;
