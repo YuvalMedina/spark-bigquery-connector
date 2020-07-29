@@ -1,5 +1,8 @@
 package com.google.cloud.spark.bigquery;
 
+import com.google.api.client.util.BackOff;
+import com.google.api.client.util.ExponentialBackOff;
+import com.google.api.client.util.Sleeper;
 import com.google.cloud.bigquery.*;
 import com.google.cloud.bigquery.connector.common.BigQueryClient;
 import org.apache.spark.sql.catalyst.InternalRow;
@@ -29,6 +32,9 @@ public class SparkInsertAllBuilder {
   private final long maxBatchRowCount;
   private final long maxBatchSizeInBytes;
 
+  private ExponentialBackOff exponentialBackOff;
+  private Sleeper sleeper;
+
   // This is a changing limit based on the estimated average row-size in bytes, as calculated by
   // recordSizeEstimator.
   private long actualRowLimit;
@@ -46,7 +52,8 @@ public class SparkInsertAllBuilder {
       BigQueryClient bigQueryClient,
       int numberOfFirstRowsToEstimate,
       long maxWriteBatchSizeInBytes,
-      int maxWriteBatchRowCount) {
+      int maxWriteBatchRowCount,
+      ExponentialBackOff exponentialBackOff) {
     this.sparkSchema = sparkSchema;
     this.tableId = tableId;
     this.bigQueryClient = bigQueryClient;
@@ -56,6 +63,9 @@ public class SparkInsertAllBuilder {
     this.actualRowLimit = maxWriteBatchRowCount;
     this.insertAllRequestBuilder = InsertAllRequest.newBuilder(tableId);
     this.rowSizeEstimator = new RowSizeEstimator(numberOfFirstRowsToEstimate);
+
+    this.exponentialBackOff = exponentialBackOff;
+    this.sleeper = Sleeper.DEFAULT;
   }
 
   public void addRow(InternalRow record) throws IOException {
@@ -76,13 +86,31 @@ public class SparkInsertAllBuilder {
       return;
     }
 
-    InsertAllResponse insertAllResponse = bigQueryClient.insertAll(insertAllRequestBuilder.build());
-    if (insertAllResponse.hasErrors()) {
-      throw new SparkInsertAllException(insertAllResponse.getInsertErrors());
-    }
+    insertAll(insertAllRequestBuilder.build());
+
     insertAllRequestBuilder = InsertAllRequest.newBuilder(tableId);
     committedRowCount += currentRequestRowCount;
     currentRequestRowCount = 0;
+  }
+
+  private void insertAll(InsertAllRequest insertAllRequest) throws IOException {
+    exponentialBackOff.reset();
+    while(true) {
+      InsertAllResponse insertAllResponse = bigQueryClient.insertAll(insertAllRequest);
+      if (!insertAllResponse.hasErrors()) {
+        break;
+      }
+      logger.error(insertAllResponse.getInsertErrors().toString());
+      long nextBackOffMillis = exponentialBackOff.nextBackOffMillis();
+      if (nextBackOffMillis == BackOff.STOP) {
+        throw new SparkInsertAllException(insertAllResponse.getInsertErrors());
+      }
+      try {
+        sleeper.sleep(nextBackOffMillis);
+      } catch (InterruptedException e) {
+        throw new RuntimeException("Insert All request was interrupted during back-off on Spark side.", e);
+      }
+    }
   }
 
   public long getCommittedRows() {

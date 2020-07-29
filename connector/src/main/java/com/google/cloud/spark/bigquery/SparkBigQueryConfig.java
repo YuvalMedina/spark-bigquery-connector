@@ -29,10 +29,8 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.spark.sql.sources.v2.DataSourceOptions;
 import org.apache.spark.sql.types.StructType;
 
-import java.util.Collection;
-import java.util.Optional;
-import java.util.OptionalInt;
-import java.util.OptionalLong;
+import java.time.Duration;
+import java.util.*;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
@@ -91,6 +89,10 @@ public class SparkBigQueryConfig implements BigQueryConfig {
   int numberOfFirstRowsToEstimate = 10;
   long maxWriteBatchSizeInBytes = 5L * 1000L * 1000L;
   int maxWriteBatchRowCount = 500;
+  OptionalInt maxElapsedTimeMillis = OptionalInt.empty();
+  OptionalInt initialIntervalMillis = OptionalInt.empty();
+  OptionalDouble multiplier = OptionalDouble.empty();
+  OptionalInt maxIntervalMillis = OptionalInt.empty();
 
   private SparkBigQueryConfig() {
     // empty
@@ -383,6 +385,22 @@ public class SparkBigQueryConfig implements BigQueryConfig {
 
   public int getMaxWriteBatchRowCount() {
     return maxWriteBatchRowCount;
+  }
+
+  public OptionalInt getMaxElapsedTimeMillis() {
+    return maxElapsedTimeMillis;
+  }
+
+  public OptionalInt getInitialIntervalMillis() {
+    return initialIntervalMillis;
+  }
+
+  public OptionalDouble getMultiplier() {
+    return multiplier;
+  }
+
+  public OptionalInt getMaxIntervalMillis() {
+    return maxIntervalMillis;
   }
 
   public ReadSessionCreatorConfig toReadSessionCreatorConfig() {

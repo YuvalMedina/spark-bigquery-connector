@@ -2,6 +2,7 @@ package com.google.cloud.spark.bigquery.v2;
 
 import com.google.cloud.bigquery.Table;
 import com.google.cloud.bigquery.connector.common.BigQueryClientFactory;
+import com.google.cloud.bigquery.connector.common.ExponentialBackOffFactory;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.sources.v2.writer.DataWriter;
 import org.apache.spark.sql.sources.v2.writer.DataWriterFactory;
@@ -16,15 +17,17 @@ public class BigQueryInsertAllDataWriterFactory implements DataWriterFactory<Int
   private final int numberOfFirstRowsToEstimate;
   private final long maxWriteBatchSizeInBytes;
   private final int maxWriteBatchRowCount;
+  private final ExponentialBackOffFactory exponentialBackOffFactory;
 
   public BigQueryInsertAllDataWriterFactory(
-      BigQueryClientFactory bigQueryClientFactory,
-      Table table,
-      StructType sparkSchema,
-      boolean ignoreInputs,
-      int numberOfFirstRowsToEstimate,
-      long maxWriteBatchSizeInBytes,
-      int maxWriteBatchRowCount) {
+          BigQueryClientFactory bigQueryClientFactory,
+          Table table,
+          StructType sparkSchema,
+          boolean ignoreInputs,
+          int numberOfFirstRowsToEstimate,
+          long maxWriteBatchSizeInBytes,
+          int maxWriteBatchRowCount,
+          ExponentialBackOffFactory exponentialBackOffFactory) {
     this.bigQueryClientFactory = bigQueryClientFactory;
     // TODO: can be null:
     this.table = table;
@@ -33,6 +36,7 @@ public class BigQueryInsertAllDataWriterFactory implements DataWriterFactory<Int
     this.numberOfFirstRowsToEstimate = numberOfFirstRowsToEstimate;
     this.maxWriteBatchSizeInBytes = maxWriteBatchSizeInBytes;
     this.maxWriteBatchRowCount = maxWriteBatchRowCount;
+    this.exponentialBackOffFactory = exponentialBackOffFactory;
   }
 
   @Override
@@ -49,6 +53,7 @@ public class BigQueryInsertAllDataWriterFactory implements DataWriterFactory<Int
         epochId,
         numberOfFirstRowsToEstimate,
         maxWriteBatchSizeInBytes,
-        maxWriteBatchRowCount);
+        maxWriteBatchRowCount,
+        exponentialBackOffFactory);
   }
 }

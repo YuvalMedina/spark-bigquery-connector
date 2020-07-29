@@ -1,9 +1,11 @@
 package com.google.cloud.spark.bigquery.v2;
 
+import com.google.api.client.util.ExponentialBackOff;
 import com.google.cloud.RetryOption;
 import com.google.cloud.bigquery.*;
 import com.google.cloud.bigquery.connector.common.BigQueryClient;
 import com.google.cloud.bigquery.connector.common.BigQueryClientFactory;
+import com.google.cloud.bigquery.connector.common.ExponentialBackOffFactory;
 import com.google.cloud.spark.bigquery.SparkBigQueryConfig;
 import com.google.common.base.Preconditions;
 import org.apache.spark.sql.SaveMode;
@@ -34,6 +36,8 @@ public class BigQueryInsertAllDataSourceWriter implements DataSourceWriter {
   private final long maxWriteBatchSizeInBytes;
   private final int maxWriteBatchRowCount;
 
+  private final ExponentialBackOffFactory exponentialBackOffFactory;
+
   private Table writingTable;
 
   enum WriteMode {
@@ -61,6 +65,11 @@ public class BigQueryInsertAllDataSourceWriter implements DataSourceWriter {
     this.numberOfFirstRowsToEstimate = config.getNumberOfFirstRowsToEstimate();
     this.maxWriteBatchSizeInBytes = config.getMaxWriteBatchSizeInBytes();
     this.maxWriteBatchRowCount = config.getMaxWriteBatchRowCount();
+
+    this.exponentialBackOffFactory = new ExponentialBackOffFactory(config.getMaxElapsedTimeMillis(),
+            config.getInitialIntervalMillis(),
+            config.getMultiplier(),
+            config.getMaxIntervalMillis());
 
     Schema bigQuerySchema = toBigQuerySchema(sparkSchema);
     this.writingTable = getOrCreateTable(saveMode, destinationTableId, bigQuerySchema);
@@ -106,7 +115,8 @@ public class BigQueryInsertAllDataSourceWriter implements DataSourceWriter {
         writeMode.equals(WriteMode.IGNORE_INPUTS),
         numberOfFirstRowsToEstimate,
         maxWriteBatchSizeInBytes,
-        maxWriteBatchRowCount);
+        maxWriteBatchRowCount,
+        exponentialBackOffFactory);
   }
 
   @Override

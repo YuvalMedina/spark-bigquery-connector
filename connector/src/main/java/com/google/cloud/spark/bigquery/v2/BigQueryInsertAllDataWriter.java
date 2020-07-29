@@ -2,6 +2,7 @@ package com.google.cloud.spark.bigquery.v2;
 
 import com.google.cloud.bigquery.TableId;
 import com.google.cloud.bigquery.connector.common.BigQueryClientFactory;
+import com.google.cloud.bigquery.connector.common.ExponentialBackOffFactory;
 import com.google.cloud.spark.bigquery.SparkInsertAllBuilder;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.sources.v2.writer.DataWriter;
@@ -26,15 +27,16 @@ public class BigQueryInsertAllDataWriter implements DataWriter<InternalRow> {
   private SparkInsertAllBuilder sparkInsertAllBuilder;
 
   public BigQueryInsertAllDataWriter(
-      BigQueryClientFactory bigQueryClientFactory,
-      TableId tableId,
-      StructType sparkSchema,
-      int partitionId,
-      long taskId,
-      long epochId,
-      int numberOfFirstRowsToEstimate,
-      long maxWriteBatchSizeInBytes,
-      int maxWriteBatchRowCount) {
+          BigQueryClientFactory bigQueryClientFactory,
+          TableId tableId,
+          StructType sparkSchema,
+          int partitionId,
+          long taskId,
+          long epochId,
+          int numberOfFirstRowsToEstimate,
+          long maxWriteBatchSizeInBytes,
+          int maxWriteBatchRowCount,
+          ExponentialBackOffFactory exponentialBackOffFactory) {
     this.tableId = tableId;
     this.sparkSchema = sparkSchema;
     this.partitionId = partitionId;
@@ -48,7 +50,8 @@ public class BigQueryInsertAllDataWriter implements DataWriter<InternalRow> {
             bigQueryClientFactory.createBigQueryClient(),
             numberOfFirstRowsToEstimate,
             maxWriteBatchSizeInBytes,
-            maxWriteBatchRowCount);
+            maxWriteBatchRowCount,
+            exponentialBackOffFactory.createExponentialBackOff());
   }
 
   @Override
