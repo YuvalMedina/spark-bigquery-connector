@@ -95,7 +95,7 @@ public class SparkInsertAllBuilder {
 
   private void insertAll(InsertAllRequest insertAllRequest) throws IOException {
     exponentialBackOff.reset();
-    while(true) {
+    while (true) {
       InsertAllResponse insertAllResponse = bigQueryClient.insertAll(insertAllRequest);
       if (!insertAllResponse.hasErrors()) {
         break;
@@ -108,7 +108,8 @@ public class SparkInsertAllBuilder {
       try {
         sleeper.sleep(nextBackOffMillis);
       } catch (InterruptedException e) {
-        throw new RuntimeException("Insert All request was interrupted during back-off on Spark side.", e);
+        throw new RuntimeException(
+            "Insert All request was interrupted during back-off on Spark side.", e);
       }
     }
   }

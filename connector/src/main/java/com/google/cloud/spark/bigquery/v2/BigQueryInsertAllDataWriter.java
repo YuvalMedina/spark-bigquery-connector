@@ -27,16 +27,16 @@ public class BigQueryInsertAllDataWriter implements DataWriter<InternalRow> {
   private SparkInsertAllBuilder sparkInsertAllBuilder;
 
   public BigQueryInsertAllDataWriter(
-          BigQueryClientFactory bigQueryClientFactory,
-          TableId tableId,
-          StructType sparkSchema,
-          int partitionId,
-          long taskId,
-          long epochId,
-          int numberOfFirstRowsToEstimate,
-          long maxWriteBatchSizeInBytes,
-          int maxWriteBatchRowCount,
-          ExponentialBackOffFactory exponentialBackOffFactory) {
+      BigQueryClientFactory bigQueryClientFactory,
+      TableId tableId,
+      StructType sparkSchema,
+      int partitionId,
+      long taskId,
+      long epochId,
+      int numberOfFirstRowsToEstimate,
+      long maxWriteBatchSizeInBytes,
+      int maxWriteBatchRowCount,
+      ExponentialBackOffFactory exponentialBackOffFactory) {
     this.tableId = tableId;
     this.sparkSchema = sparkSchema;
     this.partitionId = partitionId;

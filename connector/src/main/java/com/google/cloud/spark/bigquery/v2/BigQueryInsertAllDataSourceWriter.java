@@ -66,7 +66,9 @@ public class BigQueryInsertAllDataSourceWriter implements DataSourceWriter {
     this.maxWriteBatchSizeInBytes = config.getMaxWriteBatchSizeInBytes();
     this.maxWriteBatchRowCount = config.getMaxWriteBatchRowCount();
 
-    this.exponentialBackOffFactory = new ExponentialBackOffFactory(config.getMaxElapsedTimeMillis(),
+    this.exponentialBackOffFactory =
+        new ExponentialBackOffFactory(
+            config.getMaxElapsedTimeMillis(),
             config.getInitialIntervalMillis(),
             config.getMultiplier(),
             config.getMaxIntervalMillis());

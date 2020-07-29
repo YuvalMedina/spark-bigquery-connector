@@ -20,14 +20,14 @@ public class BigQueryInsertAllDataWriterFactory implements DataWriterFactory<Int
   private final ExponentialBackOffFactory exponentialBackOffFactory;
 
   public BigQueryInsertAllDataWriterFactory(
-          BigQueryClientFactory bigQueryClientFactory,
-          Table table,
-          StructType sparkSchema,
-          boolean ignoreInputs,
-          int numberOfFirstRowsToEstimate,
-          long maxWriteBatchSizeInBytes,
-          int maxWriteBatchRowCount,
-          ExponentialBackOffFactory exponentialBackOffFactory) {
+      BigQueryClientFactory bigQueryClientFactory,
+      Table table,
+      StructType sparkSchema,
+      boolean ignoreInputs,
+      int numberOfFirstRowsToEstimate,
+      long maxWriteBatchSizeInBytes,
+      int maxWriteBatchRowCount,
+      ExponentialBackOffFactory exponentialBackOffFactory) {
     this.bigQueryClientFactory = bigQueryClientFactory;
     // TODO: can be null:
     this.table = table;
