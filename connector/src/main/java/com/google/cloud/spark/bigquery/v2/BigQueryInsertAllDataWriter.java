@@ -2,7 +2,7 @@ package com.google.cloud.spark.bigquery.v2;
 
 import com.google.cloud.bigquery.TableId;
 import com.google.cloud.bigquery.connector.common.BigQueryClientFactory;
-import com.google.cloud.bigquery.connector.common.ExponentialBackOffFactory;
+import com.google.cloud.spark.bigquery.ExponentialBackOffFactory;
 import com.google.cloud.spark.bigquery.SparkInsertAllBuilder;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.sources.v2.writer.DataWriter;

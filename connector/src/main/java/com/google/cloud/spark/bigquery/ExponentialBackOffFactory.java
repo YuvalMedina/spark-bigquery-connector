@@ -1,4 +1,4 @@
-package com.google.cloud.bigquery.connector.common;
+package com.google.cloud.spark.bigquery;
 
 import com.google.api.client.util.ExponentialBackOff;
 

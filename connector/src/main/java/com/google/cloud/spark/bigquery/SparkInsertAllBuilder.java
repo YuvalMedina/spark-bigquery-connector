@@ -96,21 +96,44 @@ public class SparkInsertAllBuilder {
   private void insertAll(InsertAllRequest insertAllRequest) throws IOException {
     exponentialBackOff.reset();
     while (true) {
-      InsertAllResponse insertAllResponse = bigQueryClient.insertAll(insertAllRequest);
+      InsertAllResponse insertAllResponse = null;
+      try {
+        insertAllResponse = bigQueryClient.insertAll(insertAllRequest);
+      } catch (BigQueryException e) {
+        sleep(e);
+        break;
+      }
       if (!insertAllResponse.hasErrors()) {
         break;
       }
       logger.error(insertAllResponse.getInsertErrors().toString());
-      long nextBackOffMillis = exponentialBackOff.nextBackOffMillis();
-      if (nextBackOffMillis == BackOff.STOP) {
-        throw new SparkInsertAllException(insertAllResponse.getInsertErrors());
-      }
-      try {
-        sleeper.sleep(nextBackOffMillis);
-      } catch (InterruptedException e) {
-        throw new RuntimeException(
-            "Insert All request was interrupted during back-off on Spark side.", e);
-      }
+      sleep(insertAllResponse.getInsertErrors());
+    }
+  }
+
+  private void sleep(Map<Long, List<BigQueryError>> insertErrors) throws IOException {
+    long nextBackOffMillis = exponentialBackOff.nextBackOffMillis();
+    if (nextBackOffMillis == BackOff.STOP) {
+      throw new SparkInsertAllException(insertErrors);
+    }
+    try {
+      sleeper.sleep(nextBackOffMillis);
+    } catch (InterruptedException e) {
+      throw new RuntimeException(
+          "Insert All request was interrupted during back-off on Spark side.", e);
+    }
+  }
+
+  private void sleep(Exception bigQueryException) throws IOException {
+    long nextBackOffMillis = exponentialBackOff.nextBackOffMillis();
+    if (nextBackOffMillis == BackOff.STOP) {
+      throw new SparkInsertAllException(bigQueryException);
+    }
+    try {
+      sleeper.sleep(nextBackOffMillis);
+    } catch (InterruptedException e) {
+      throw new RuntimeException(
+          "Insert All request was interrupted during back-off on Spark side.", e);
     }
   }
 
@@ -217,6 +240,10 @@ public class SparkInsertAllBuilder {
 
     SparkInsertAllException(Map<Long, List<BigQueryError>> insertErrors) {
       super(createMessage(insertErrors));
+    }
+
+    SparkInsertAllException(Exception bigQueryException) {
+      super(bigQueryException);
     }
 
     static String createMessage(Map<Long, List<BigQueryError>> insertErrors) {
