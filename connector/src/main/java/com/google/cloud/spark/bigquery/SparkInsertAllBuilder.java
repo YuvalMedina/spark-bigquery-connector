@@ -26,6 +26,7 @@ public class SparkInsertAllBuilder {
   private static final Charset UTF_8 = StandardCharsets.UTF_8;
   private static final String MAPTYPE_ERROR_MESSAGE = "MapType is unsupported.";
 
+  private final int partitionId;
   private final StructType sparkSchema;
   private final TableId tableId;
   private final BigQueryClient bigQueryClient;
@@ -47,6 +48,7 @@ public class SparkInsertAllBuilder {
   private RowSizeEstimator rowSizeEstimator;
 
   public SparkInsertAllBuilder(
+      int partitionId,
       StructType sparkSchema,
       TableId tableId,
       BigQueryClient bigQueryClient,
@@ -54,6 +56,7 @@ public class SparkInsertAllBuilder {
       long maxWriteBatchSizeInBytes,
       int maxWriteBatchRowCount,
       ExponentialBackOff exponentialBackOff) {
+    this.partitionId = partitionId;
     this.sparkSchema = sparkSchema;
     this.tableId = tableId;
     this.bigQueryClient = bigQueryClient;
@@ -100,40 +103,27 @@ public class SparkInsertAllBuilder {
       try {
         insertAllResponse = bigQueryClient.insertAll(insertAllRequest);
       } catch (BigQueryException e) {
-        sleep(e);
-        break;
+        sleep(exponentialBackOff.nextBackOffMillis(), new SparkInsertAllException(e)); // TODO: catch deduplication...
+        continue;
       }
       if (!insertAllResponse.hasErrors()) {
         break;
       }
-      logger.error(insertAllResponse.getInsertErrors().toString());
-      sleep(insertAllResponse.getInsertErrors());
+      sleep(exponentialBackOff.nextBackOffMillis(), new SparkInsertAllException(insertAllResponse.getInsertErrors()));
     }
+
   }
 
-  private void sleep(Map<Long, List<BigQueryError>> insertErrors) throws IOException {
-    long nextBackOffMillis = exponentialBackOff.nextBackOffMillis();
+  private void sleep(long nextBackOffMillis, SparkInsertAllException sparkInsertAllException) throws IOException {
+    logger.trace("Backing off partition number {} for {} milliseconds.", partitionId, nextBackOffMillis);
     if (nextBackOffMillis == BackOff.STOP) {
-      throw new SparkInsertAllException(insertErrors);
+      throw sparkInsertAllException;
     }
     try {
       sleeper.sleep(nextBackOffMillis);
     } catch (InterruptedException e) {
       throw new RuntimeException(
-          "Insert All request was interrupted during back-off on Spark side.", e);
-    }
-  }
-
-  private void sleep(Exception bigQueryException) throws IOException {
-    long nextBackOffMillis = exponentialBackOff.nextBackOffMillis();
-    if (nextBackOffMillis == BackOff.STOP) {
-      throw new SparkInsertAllException(bigQueryException);
-    }
-    try {
-      sleeper.sleep(nextBackOffMillis);
-    } catch (InterruptedException e) {
-      throw new RuntimeException(
-          "Insert All request was interrupted during back-off on Spark side.", e);
+          "Insert All request's back-off was interrupted on the Spark side.", e);
     }
   }
 

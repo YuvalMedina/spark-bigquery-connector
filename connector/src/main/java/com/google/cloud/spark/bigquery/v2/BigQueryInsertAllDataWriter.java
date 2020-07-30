@@ -45,6 +45,7 @@ public class BigQueryInsertAllDataWriter implements DataWriter<InternalRow> {
 
     this.sparkInsertAllBuilder =
         new SparkInsertAllBuilder(
+            partitionId,
             sparkSchema,
             tableId,
             bigQueryClientFactory.createBigQueryClient(),
