@@ -103,19 +103,24 @@ public class SparkInsertAllBuilder {
       try {
         insertAllResponse = bigQueryClient.insertAll(insertAllRequest);
       } catch (BigQueryException e) {
-        sleep(exponentialBackOff.nextBackOffMillis(), new SparkInsertAllException(e)); // TODO: catch deduplication...
+        sleep(
+            exponentialBackOff.nextBackOffMillis(),
+            new SparkInsertAllException(e)); // TODO: catch deduplication...
         continue;
       }
       if (!insertAllResponse.hasErrors()) {
         break;
       }
-      sleep(exponentialBackOff.nextBackOffMillis(), new SparkInsertAllException(insertAllResponse.getInsertErrors()));
+      sleep(
+          exponentialBackOff.nextBackOffMillis(),
+          new SparkInsertAllException(insertAllResponse.getInsertErrors()));
     }
-
   }
 
-  private void sleep(long nextBackOffMillis, SparkInsertAllException sparkInsertAllException) throws IOException {
-    logger.trace("Backing off partition number {} for {} milliseconds.", partitionId, nextBackOffMillis);
+  private void sleep(long nextBackOffMillis, SparkInsertAllException sparkInsertAllException)
+      throws IOException {
+    logger.trace(
+        "Backing off partition number {} for {} milliseconds.", partitionId, nextBackOffMillis);
     if (nextBackOffMillis == BackOff.STOP) {
       throw sparkInsertAllException;
     }

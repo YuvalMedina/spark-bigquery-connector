@@ -142,29 +142,35 @@ public class BigQueryInsertAllDataSourceWriter implements DataSourceWriter {
                 writingTable.getTableId(), destinationTableId);
       } else {
         // overwrite:
+        // must wait for destination table to stop streaming, if it is:
+        bigQueryClient.blockUntilStreamingBufferIsEmpty(destinationTableId);
         copyJob =
             bigQueryClient.overwriteDestinationWithTemporary(
                 writingTable.getTableId(), destinationTableId);
       }
 
-      try {
-        Job completedJob =
-            copyJob.waitFor(
-                RetryOption.initialRetryDelay(Duration.ofSeconds(1)),
-                RetryOption.totalTimeout(Duration.ofMinutes(3)));
-        if (completedJob == null && completedJob.getStatus().getError() != null) {
-          throw new IOException(completedJob.getStatus().getError().toString());
-        }
-      } catch (InterruptedException | IOException e) {
-        throw new RuntimeException(
-            "Could not copy table from temporary sink to destination table.", e);
-      }
+      waitForJob(copyJob, writingTable);
 
       // delete our temporary writing table:
       bigQueryClient.deleteTable(writingTable.getTableId());
     }
 
     logger.info("BigQuery DataSource committed with row count: {}", totalRowCount);
+  }
+
+  private void waitForJob(Job copyJob, Table temporaryTable) {
+    try {
+      Job completedJob =
+              copyJob.waitFor(
+                      RetryOption.initialRetryDelay(Duration.ofSeconds(1)),
+                      RetryOption.totalTimeout(Duration.ofMinutes(3)));
+      if (completedJob == null && completedJob.getStatus().getError() != null) {
+        throw new IOException(completedJob.getStatus().getError().toString());
+      }
+    } catch (InterruptedException | IOException e) {
+      throw new RuntimeException(
+              "Could not copy table from temporary sink to destination table.", e);
+    }
   }
 
   @Override

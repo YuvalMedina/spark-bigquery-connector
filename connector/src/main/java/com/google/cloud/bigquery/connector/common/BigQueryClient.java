@@ -15,11 +15,21 @@
  */
 package com.google.cloud.bigquery.connector.common;
 
+import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
+import com.google.api.client.googleapis.services.AbstractGoogleClientRequest;
+import com.google.api.client.googleapis.services.GoogleClientRequestInitializer;
+import com.google.api.client.json.jackson2.JacksonFactory;
+import com.google.api.client.util.Sleeper;
+import com.google.api.services.bigquery.Bigquery;
+import com.google.api.services.bigquery.BigqueryRequestInitializer;
 import com.google.cloud.bigquery.*;
 import com.google.cloud.http.BaseHttpServiceException;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
+import com.google.gson.GsonBuilder;
 
+import java.io.IOException;
+import java.security.GeneralSecurityException;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -64,6 +74,32 @@ public class BigQueryClient {
 
   public boolean tableExists(TableId tableId) {
     return getTable(tableId) != null;
+  }
+
+  public void blockUntilStreamingBufferIsEmpty(TableId tableId) {
+    BigQueryOptions bigQueryOptions = bigQuery.getOptions();
+    Bigquery bigqueryHttp;
+    try {
+      bigqueryHttp = new Bigquery.Builder(GoogleNetHttpTransport.newTrustedTransport(),
+              JacksonFactory.getDefaultInstance(), null)
+              .setApplicationName(bigQueryOptions.getApplicationName())
+              .build();
+
+    } catch (GeneralSecurityException | IOException e) {
+      throw new RuntimeException("Could not initialize Bigquery http request.", e);
+    }
+    Sleeper sleeper = Sleeper.DEFAULT;
+    try {
+      while(bigqueryHttp.tables()
+              .get(bigQueryOptions.getProjectId(), tableId.getDataset(), tableId.getTable())
+              .execute().getStreamingBuffer() != null) {
+        sleeper.sleep(4000L);
+      }
+    } catch (IOException e) {
+      throw new RuntimeException("Could not get table's streaming buffer.", e);
+    } catch (InterruptedException e) {
+      throw new RuntimeException("Interrupted while waiting for table's streaming buffer to empty.", e);
+    }
   }
 
   public Table createTable(TableId tableId, Schema schema) {
