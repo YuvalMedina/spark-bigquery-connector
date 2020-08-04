@@ -191,7 +191,6 @@ public class SparkBigQueryConfig implements BigQueryConfig {
       loadSchemaUpdateOptions.add(JobInfo.SchemaUpdateOption.ALLOW_FIELD_RELAXATION);
     }
     config.loadSchemaUpdateOptions = loadSchemaUpdateOptions.build();
-    if (getOption(op))
 
     return config;
   }
