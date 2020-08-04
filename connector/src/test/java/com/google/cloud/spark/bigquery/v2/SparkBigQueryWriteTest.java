@@ -354,12 +354,12 @@ public class SparkBigQueryWriteTest {
             /*.add(new StructField("timestamp", TimestampType, true, Metadata.empty()))*/ // TODO: restore when BigQuery Storage API adds external TimeStamp support.
             .add(new StructField("binary", BinaryType, true, Metadata.empty()))
             .add(new StructField("float", DoubleType, true, Metadata.empty()))
-            /*.add(new StructField("nums", new StructType()
+            .add(new StructField("nums", new StructType()
                     .add(new StructField("min", new DecimalType(38,9), true, Metadata.empty()))
                     .add(new StructField("max", new DecimalType(38,9), true, Metadata.empty()))
                     .add(new StructField("pi", new DecimalType(38,9), true, Metadata.empty()))
                     .add(new StructField("big_pi", new DecimalType(38,9), true, Metadata.empty())),
-                    true, Metadata.empty()))*/ // TODO: current known issues with NUMERIC type conversion, waiting for BigQuery team input.
+                    true, Metadata.empty()))
             .add(new StructField("int_arr",
                     new ArrayType(IntegerType,true),
                     true, Metadata.empty()))
@@ -382,12 +382,12 @@ public class SparkBigQueryWriteTest {
             /*.add(new StructField("timestamp", TimestampType, true, Metadata.empty()))*/ // TODO: restore when BigQuery Storage API adds external TimeStamp support.
             .add(new StructField("binary", BinaryType, true, Metadata.empty()))
             .add(new StructField("float", DoubleType, true, Metadata.empty()))
-            /*.add(new StructField("nums", new StructType()
+            .add(new StructField("nums", new StructType()
                     .add(new StructField("min", new DecimalType(38,9), true, Metadata.empty()))
                     .add(new StructField("max", new DecimalType(38,9), true, Metadata.empty()))
                     .add(new StructField("pi", new DecimalType(38,9), true, Metadata.empty()))
                     .add(new StructField("big_pi", new DecimalType(38,9), true, Metadata.empty())),
-                    true, Metadata.empty()))*/ // TODO: current known issues with NUMERIC type conversion, waiting for BigQuery team input.
+                    true, Metadata.empty()))
             .add(new StructField("int_arr",
                     new ArrayType(LongType,true),
                     true, Metadata.empty()))
@@ -410,12 +410,12 @@ public class SparkBigQueryWriteTest {
                     /*new Timestamp(1595010664123L),*/ // TODO: restore when BigQuery Storage API adds external TimeStamp support.
                     new byte[]{1, 2, 3, 4},
                     1.2345,
-                    /*RowFactory.create(
+                    RowFactory.create(
                             new BigDecimal("-99999999999999999999999999999.999999999"),
                             new BigDecimal("99999999999999999999999999999.999999999"),
                             new BigDecimal("3.14"),
                             new BigDecimal("31415926535897932384626433832.795028841")
-                    ),*/ // TODO: current known issues with NUMERIC type conversion, waiting for BigQuery team input.
+                    ),
                     new int[]{1,2,3,4},
                     new Row[]{
                             RowFactory.create(

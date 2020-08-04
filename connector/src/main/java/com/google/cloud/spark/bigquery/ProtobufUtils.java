@@ -24,6 +24,7 @@ import com.google.cloud.bigquery.storage.v1alpha2.ProtoBufProto;
 import com.google.cloud.bigquery.storage.v1alpha2.ProtoSchemaConverter;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.primitives.Bytes;
 import com.google.protobuf.DescriptorProtos;
 import com.google.protobuf.Descriptors;
 import com.google.protobuf.DynamicMessage;
@@ -35,6 +36,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
+import java.math.MathContext;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
@@ -355,7 +358,7 @@ public class ProtobufUtils {
     }
 
     if (sparkType instanceof DecimalType) {
-      return convertBigDecimalToNumeric(((Decimal) sparkValue).toJavaBigDecimal());
+      return convertBigDecimalToNumericBytes(((Decimal) sparkValue).toJavaBigDecimal());
     }
 
     if (sparkType instanceof BooleanType) {
@@ -393,9 +396,7 @@ public class ProtobufUtils {
 
       if (sparkType instanceof ArrayType) {
         ArrayType arrayType = (ArrayType) sparkType;
-        /* DescriptorProtos.FieldDescriptorProto.Label elementLabel = arrayType.containsNull() ?
-        DescriptorProtos.FieldDescriptorProto.Label.LABEL_OPTIONAL :
-        DescriptorProtos.FieldDescriptorProto.Label.LABEL_REQUIRED; TODO: how to support null instances inside an array (repeated field) in BigQuery?*/
+        // TODO: how to support null instances inside an array (repeated field) in BigQuery?*/
         sparkType = arrayType.elementType();
         fieldLabel = DescriptorProtos.FieldDescriptorProto.Label.LABEL_REPEATED;
       }
@@ -438,30 +439,13 @@ public class ProtobufUtils {
         new IllegalStateException("Unexpected type: " + sparkType));
   }
 
-  private static byte[] convertBigDecimalToNumeric(BigDecimal decimal) {
-    return Base64.getEncoder()
-        .encode(
-            reverse(
-                decimal
-                    .setScale(BQ_NUMERIC_SCALE, BigDecimal.ROUND_UNNECESSARY)
-                    .unscaledValue()
-                    .toByteArray()));
-  }
-
-  private static byte[] reverse(byte[] arr) {
-    if (arr == null || arr.length <= 1) {
-      return arr;
-    }
-    byte tmp;
-    int index = 0;
-    int reversedIndex = arr.length - 1;
-    while (reversedIndex > index) {
-      tmp = arr[reversedIndex];
-      arr[reversedIndex] = arr[index];
-      arr[index] = tmp;
-      index++;
-      reversedIndex--;
-    }
-    return arr;
+  private static byte[] convertBigDecimalToNumericBytes(BigDecimal bigDecimal) {
+    byte[] decimalBytes = bigDecimal
+            .round(new MathContext(BQ_NUMERIC_PRECISION, RoundingMode.UNNECESSARY))
+            .setScale(BQ_NUMERIC_SCALE, BigDecimal.ROUND_UNNECESSARY)
+            .unscaledValue()
+            .toByteArray();
+    Bytes.reverse(decimalBytes);
+    return decimalBytes;
   }
 }
