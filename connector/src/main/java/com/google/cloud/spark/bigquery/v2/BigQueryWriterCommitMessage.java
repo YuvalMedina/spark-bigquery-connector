@@ -8,7 +8,6 @@ public class BigQueryWriterCommitMessage implements WriterCommitMessage {
   private final int partitionId;
   private final long taskId;
   private final long epochId;
-  private final String tablePath;
   private final Long rowCount;
 
   public BigQueryWriterCommitMessage(
@@ -16,13 +15,11 @@ public class BigQueryWriterCommitMessage implements WriterCommitMessage {
       int partitionId,
       long taskId,
       long epochId,
-      String tablePath,
       Long rowCount) {
     this.writeStreamName = writeStreamName;
     this.partitionId = partitionId;
     this.taskId = taskId;
     this.epochId = epochId;
-    this.tablePath = tablePath;
     this.rowCount = rowCount;
   }
 
@@ -45,10 +42,6 @@ public class BigQueryWriterCommitMessage implements WriterCommitMessage {
     return epochId;
   }
 
-  public String getTablePath() {
-    return tablePath;
-  }
-
   public long getRowCount() throws NoSuchFieldError {
     if (rowCount == null) {
       throw new NoSuchFieldError(
@@ -69,8 +62,6 @@ public class BigQueryWriterCommitMessage implements WriterCommitMessage {
           + taskId
           + ", epochId="
           + epochId
-          + ", tableId='"
-          + tablePath
           + ", rowCount='"
           + rowCount
           + '\''
@@ -83,8 +74,6 @@ public class BigQueryWriterCommitMessage implements WriterCommitMessage {
         + taskId
         + ", epochId="
         + epochId
-        + ", tableId='"
-        + tablePath
         + '\''
         + '}';
   }

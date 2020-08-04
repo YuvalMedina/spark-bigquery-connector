@@ -3,6 +3,7 @@ package com.google.cloud.spark.bigquery.v2;
 import com.google.cloud.bigquery.*;
 import com.google.cloud.bigquery.connector.common.BigQueryClient;
 import com.google.cloud.bigquery.connector.common.BigQueryWriteClientFactory;
+import com.google.cloud.bigquery.connector.common.WriteStreamPool;
 import com.google.cloud.bigquery.storage.v1alpha2.BigQueryWriteClient;
 import com.google.cloud.bigquery.storage.v1alpha2.ProtoBufProto;
 import com.google.cloud.bigquery.storage.v1alpha2.ProtoSchemaConverter;
@@ -30,11 +31,10 @@ public class BigQueryDataSourceWriter implements DataSourceWriter {
 
   private final BigQueryClient bigQueryClient;
   private final BigQueryWriteClientFactory writeClientFactory;
+  private final WriteStreamPool writeStreamPool;
   private final TableId destinationTableId;
   private final StructType sparkSchema;
-  private final Schema bigQuerySchema;
   private final ProtoBufProto.ProtoSchema protoSchema;
-  private final SaveMode saveMode;
   private final String writeUUID;
 
   private final TableId temporaryTableId;
@@ -61,18 +61,17 @@ public class BigQueryDataSourceWriter implements DataSourceWriter {
     this.writeClientFactory = bigQueryWriteClientFactory;
     this.destinationTableId = destinationTableId;
     this.writeUUID = writeUUID;
-    this.saveMode = saveMode;
     this.sparkSchema = sparkSchema;
-    this.bigQuerySchema = toBigQuerySchema(sparkSchema);
     try {
       this.protoSchema = toProtoSchema(sparkSchema);
     } catch (IllegalArgumentException e) {
       throw new RuntimeException("Could not convert Spark schema to protobuf descriptor.", e);
     }
 
-    this.temporaryTableId = getOrCreateTable(saveMode, destinationTableId, bigQuerySchema);
+    this.temporaryTableId = getOrCreateTable(saveMode, destinationTableId, toBigQuerySchema(sparkSchema));
     this.tablePathForBigQueryStorage =
         bigQueryClient.createTablePathForBigQueryStorage(temporaryTableId);
+    this.writeStreamPool = new WriteStreamPool(tablePathForBigQueryStorage);
 
     if (!writingMode.equals(WritingMode.IGNORE_INPUTS)) {
       this.writeClient = writeClientFactory.createBigQueryWriteClient();
@@ -112,7 +111,7 @@ public class BigQueryDataSourceWriter implements DataSourceWriter {
   public DataWriterFactory<InternalRow> createWriterFactory() {
     return new BigQueryDataWriterFactory(
         writeClientFactory,
-        tablePathForBigQueryStorage,
+        writeStreamPool,
         sparkSchema,
         protoSchema,
         writingMode.equals(WritingMode.IGNORE_INPUTS));

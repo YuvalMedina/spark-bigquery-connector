@@ -3,15 +3,14 @@ package com.google.cloud.spark.bigquery.v2;
 import com.google.api.client.util.Sleeper;
 import com.google.api.core.ApiFuture;
 import com.google.cloud.bigquery.connector.common.BigQueryWriteClientFactory;
+import com.google.cloud.bigquery.connector.common.WriteStreamPool;
 import com.google.cloud.bigquery.storage.v1alpha2.*;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Int64Value;
-import org.apache.spark.sql.types.StructType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -21,16 +20,13 @@ public class BigQueryDataWriterHelper {
 
   final Logger logger = LoggerFactory.getLogger(BigQueryDataWriterHelper.class);
   final long APPEND_REQUEST_SIZE = 1000L * 1000L; // 1MB limit for each append
-  final long MILLIS_IN_A_MINUTE = 60000L;
   final Sleeper sleeper = Sleeper.DEFAULT;
   final ExecutorService validateThread = Executors.newCachedThreadPool();
 
   private final BigQueryWriteClient writeClient;
-  private final String tablePath;
+  private final String writeStreamName;
   private final ProtoBufProto.ProtoSchema protoSchema;
-  private final int partitionId;
 
-  private Stream.WriteStream writeStream;
   private StreamWriter streamWriter;
   private ProtoBufProto.ProtoRows.Builder protoRows;
 
@@ -42,44 +38,24 @@ public class BigQueryDataWriterHelper {
 
   protected BigQueryDataWriterHelper(
       BigQueryWriteClientFactory writeClientFactory,
-      String tablePath,
+      WriteStreamPool writeStreamPool,
       ProtoBufProto.ProtoSchema protoSchema,
       int partitionId) {
     this.writeClient = writeClientFactory.createBigQueryWriteClient();
-    this.tablePath = tablePath;
+    this.writeStreamName = writeStreamPool.getWriteStreamName(partitionId, writeClient);
     this.protoSchema = protoSchema;
-    this.partitionId = partitionId;
 
-    createWriteStreamAndStreamWriter();
+    try {
+      long timeout = (long) (Math.random() * 60000L * partitionId / 1000);
+      sleeper.sleep(timeout);
+      this.streamWriter = StreamWriter.newBuilder(writeStreamName).build();
+    } catch (IOException | InterruptedException e) {
+      throw new RuntimeException("Could not get stream-writer.", e);
+    }
     this.protoRows = ProtoBufProto.ProtoRows.newBuilder();
   }
 
-  private void createWriteStreamAndStreamWriter() {
-    long timeout = (long) (Math.random() * MILLIS_IN_A_MINUTE * partitionId / 1000);
-    try {
-      sleeper.sleep(timeout);
-    } catch (InterruptedException e) {
-      throw new RuntimeException(
-          "Timeout was interrupted while waiting to create write-stream.", e);
-    }
-    this.writeStream =
-        writeClient.createWriteStream(
-            Storage.CreateWriteStreamRequest.newBuilder()
-                .setParent(tablePath)
-                .setWriteStream(
-                    Stream.WriteStream.newBuilder()
-                        .setType(Stream.WriteStream.Type.PENDING)
-                        .build())
-                .build());
-
-    try {
-      this.streamWriter = StreamWriter.newBuilder(writeStream.getName()).build();
-    } catch (IOException | InterruptedException e) {
-      throw new RuntimeException("Could not build stream-writer.", e);
-    }
-  }
-
-  protected void addRow(ByteString message) throws IOException {
+  protected void addRow(ByteString message) {
     int messageSize = message.size();
 
     if (appendBytes + messageSize > APPEND_REQUEST_SIZE) {
@@ -93,7 +69,7 @@ public class BigQueryDataWriterHelper {
     appendRows++;
   }
 
-  private void appendRequest() throws IOException, IllegalStateException {
+  private void appendRequest() {
     Storage.AppendRowsRequest.Builder requestBuilder =
         Storage.AppendRowsRequest.newBuilder().setOffset(Int64Value.of(writeStreamRows));
 
@@ -102,7 +78,7 @@ public class BigQueryDataWriterHelper {
     dataBuilder.setWriterSchema(protoSchema);
     dataBuilder.setRows(protoRows.build());
 
-    requestBuilder.setProtoRows(dataBuilder.build()).setWriteStream(writeStream.getName());
+    requestBuilder.setProtoRows(dataBuilder.build()).setWriteStream(writeStreamName);
 
     ApiFuture<Storage.AppendRowsResponse> response = streamWriter.append(requestBuilder.build());
 
@@ -113,7 +89,7 @@ public class BigQueryDataWriterHelper {
     this.writeStreamBytes += appendBytes;
   }
 
-  protected void finalizeStream() throws IOException {
+  protected void finalizeStream() {
     if (this.appendRows != 0 || this.appendBytes != 0) {
       appendRequest();
     }
@@ -126,17 +102,17 @@ public class BigQueryDataWriterHelper {
 
     Storage.FinalizeWriteStreamResponse finalizeResponse =
         writeClient.finalizeWriteStream(
-            Storage.FinalizeWriteStreamRequest.newBuilder().setName(writeStream.getName()).build());
+            Storage.FinalizeWriteStreamRequest.newBuilder().setName(writeStreamName).build());
 
     if (finalizeResponse.getRowCount() != writeStreamRows) {
-      throw new IOException("Finalize response had an unexpected row count.");
+      throw new RuntimeException("Finalize response had an unexpected row count.");
     }
 
     writeClient.shutdown();
 
     logger.debug(
         "Write-stream {} finalized with row-count {}",
-        writeStream.getName(),
+        writeStreamName,
         finalizeResponse.getRowCount());
   }
 
@@ -145,7 +121,7 @@ public class BigQueryDataWriterHelper {
   }
 
   protected String getWriteStreamName() {
-    return writeStream.getName();
+    return writeStreamName;
   }
 
   protected long getDataWriterRows() {
@@ -161,7 +137,7 @@ public class BigQueryDataWriterHelper {
     }
   }
 
-  class ValidateResponses implements Runnable {
+  static class ValidateResponses implements Runnable {
 
     final long offset;
     final ApiFuture<Storage.AppendRowsResponse> response;

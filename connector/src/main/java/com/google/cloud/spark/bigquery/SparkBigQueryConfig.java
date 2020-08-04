@@ -87,6 +87,8 @@ public class SparkBigQueryConfig implements BigQueryConfig {
   ImmutableList<JobInfo.SchemaUpdateOption> loadSchemaUpdateOptions = ImmutableList.of();
   int viewExpirationTimeInHours = 24;
   int maxReadRowsRetries = 3;
+  // for write jobs:
+  OptionalInt numPartitions = OptionalInt.empty();
 
   private SparkBigQueryConfig() {
     // empty
@@ -189,6 +191,7 @@ public class SparkBigQueryConfig implements BigQueryConfig {
       loadSchemaUpdateOptions.add(JobInfo.SchemaUpdateOption.ALLOW_FIELD_RELAXATION);
     }
     config.loadSchemaUpdateOptions = loadSchemaUpdateOptions.build();
+    if (getOption(op))
 
     return config;
   }
