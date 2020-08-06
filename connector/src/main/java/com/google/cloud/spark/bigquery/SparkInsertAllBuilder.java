@@ -5,6 +5,9 @@ import com.google.api.client.util.ExponentialBackOff;
 import com.google.api.client.util.Sleeper;
 import com.google.cloud.bigquery.*;
 import com.google.cloud.bigquery.connector.common.BigQueryClient;
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
+import com.google.common.util.concurrent.MoreExecutors;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.catalyst.util.ArrayData;
 import org.apache.spark.sql.catalyst.util.DateTimeUtils$;
@@ -18,10 +21,15 @@ import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executor;
 
 public class SparkInsertAllBuilder {
 
   final Logger logger = LoggerFactory.getLogger(SparkInsertAllBuilder.class);
+  final Executor appendExecutor = MoreExecutors.directExecutor();
+  final List<ListenableFuture<Void>> responseValidationFutures = new ArrayList<>();
 
   private static final Charset UTF_8 = StandardCharsets.UTF_8;
   private static final String MAPTYPE_ERROR_MESSAGE = "MapType is unsupported.";
@@ -32,9 +40,7 @@ public class SparkInsertAllBuilder {
   private final BigQueryClient bigQueryClient;
   private final long maxBatchRowCount;
   private final long maxBatchSizeInBytes;
-
-  private ExponentialBackOff exponentialBackOff;
-  private Sleeper sleeper;
+  private final ExponentialBackOff.Builder exponentialBackOff;
 
   // This is a changing limit based on the estimated average row-size in bytes, as calculated by
   // recordSizeEstimator.
@@ -55,7 +61,7 @@ public class SparkInsertAllBuilder {
       int numberOfFirstRowsToEstimate,
       long maxWriteBatchSizeInBytes,
       int maxWriteBatchRowCount,
-      ExponentialBackOff exponentialBackOff) {
+      ExponentialBackOff.Builder exponentialBackOff) {
     this.partitionId = partitionId;
     this.sparkSchema = sparkSchema;
     this.tableId = tableId;
@@ -68,7 +74,6 @@ public class SparkInsertAllBuilder {
     this.rowSizeEstimator = new RowSizeEstimator(numberOfFirstRowsToEstimate);
 
     this.exponentialBackOff = exponentialBackOff;
-    this.sleeper = Sleeper.DEFAULT;
   }
 
   public void addRow(InternalRow record) throws IOException {
@@ -80,55 +85,35 @@ public class SparkInsertAllBuilder {
 
     if (currentRequestRowCount == actualRowLimit) {
       // TODO: Add mechanism / error for a single row that might be exceeding size quotas...
-      commit();
+      appendCurrentRows();
     }
   }
 
-  public void commit() throws IOException {
+  public void appendCurrentRows() throws IOException {
     if (currentRequestRowCount == 0) {
       return;
     }
 
-    insertAll(insertAllRequestBuilder.build());
+    responseValidationFutures.add(
+            Futures.submit(new SendInsertAllRequest(exponentialBackOff.build(),
+                    bigQueryClient, insertAllRequestBuilder.build()),
+                    appendExecutor));
 
     insertAllRequestBuilder = InsertAllRequest.newBuilder(tableId);
     committedRowCount += currentRequestRowCount;
     currentRequestRowCount = 0;
   }
 
-  private void insertAll(InsertAllRequest insertAllRequest) throws IOException {
-    exponentialBackOff.reset();
-    while (true) {
-      InsertAllResponse insertAllResponse = null;
-      try {
-        insertAllResponse = bigQueryClient.insertAll(insertAllRequest);
-      } catch (BigQueryException e) {
-        sleep(
-            exponentialBackOff.nextBackOffMillis(),
-            new SparkInsertAllException(e)); // TODO: catch deduplication...
-        continue;
-      }
-      if (!insertAllResponse.hasErrors()) {
-        break;
-      }
-      sleep(
-          exponentialBackOff.nextBackOffMillis(),
-          new SparkInsertAllException(insertAllResponse.getInsertErrors()));
-    }
-  }
-
-  private void sleep(long nextBackOffMillis, SparkInsertAllException sparkInsertAllException)
-      throws IOException {
-    logger.trace(
-        "Backing off partition number {} for {} milliseconds.", partitionId, nextBackOffMillis);
-    if (nextBackOffMillis == BackOff.STOP) {
-      throw sparkInsertAllException;
-    }
+  public void commit() throws IOException {
+    appendCurrentRows();
+    ListenableFuture<Void> allSucceed = Futures.whenAllSucceed(responseValidationFutures)
+            .call(()->null, appendExecutor);
     try {
-      sleeper.sleep(nextBackOffMillis);
+      allSucceed.get();
     } catch (InterruptedException e) {
-      throw new RuntimeException(
-          "Insert All request's back-off was interrupted on the Spark side.", e);
+      throw new RuntimeException("Interrupted by getting the responses of all append requests.", e);
+    } catch (ExecutionException e) {
+      throw new IOException(e.getCause());
     }
   }
 
@@ -262,26 +247,27 @@ public class SparkInsertAllBuilder {
     }
 
     void updateRowSizeEstimateAndActualRowLimit(Map<String, Object> insertAllRecord) {
-      if (estimatesCount < numberOfRowsToEstimate) {
-        averageRowSizeInBytes.addToAverage(SizeEstimator.estimate(insertAllRecord));
-        // TODO: take 3 sizes: Shakespeare w 1 byte per row, other tables w 1kB row, 10kB rows. Need
-        // to adjust max_batch_size?
-        // TODO: fundamental assumption: all records are ~same size... magic number: 10? 1? batch
-        // size? max_byte? make parameters.
-
-        // pick the smaller of the two limits:
-        // 1. how many rows would fit within the maximum number of bytes per batch
-        // 2. the actual limit on the number of rows per batch
-        actualRowLimit =
-            Math.min(maxBatchSizeInBytes / averageRowSizeInBytes.getAverage(), maxBatchRowCount);
-
-        estimatesCount++;
-
-        logger.debug(
-            "Average record size estimate in bytes: {}. Actual row limit: {}",
-            averageRowSizeInBytes.getAverage(),
-            actualRowLimit);
+      if (estimatesCount >= numberOfRowsToEstimate) {
+        return;
       }
+      averageRowSizeInBytes.addToAverage(SizeEstimator.estimate(insertAllRecord));
+      // TODO: take 3 sizes: Shakespeare w 1 byte per row, other tables w 1kB row, 10kB rows. Need
+      // to adjust max_batch_size?
+      // TODO: fundamental assumption: all records are ~same size... magic number: 10? 1? batch
+      // size? max_byte? make parameters.
+
+      // pick the smaller of the two limits:
+      // 1. how many rows would fit within the maximum number of bytes per batch
+      // 2. the actual limit on the number of rows per batch
+      actualRowLimit =
+          Math.min(maxBatchSizeInBytes / averageRowSizeInBytes.getAverage(), maxBatchRowCount);
+
+      estimatesCount++;
+
+      logger.debug(
+          "Average record size estimate in bytes: {}. Actual row limit: {}",
+          averageRowSizeInBytes.getAverage(),
+          actualRowLimit);
     }
 
     class AverageFraction {
@@ -304,6 +290,58 @@ public class SparkInsertAllBuilder {
           sum += size;
         }
         return sum / count;
+      }
+    }
+  }
+
+  static class SendInsertAllRequest implements Callable<Void> {
+
+    final ExponentialBackOff exponentialBackOff;
+    final BigQueryClient bigQueryClient;
+    final InsertAllRequest insertAllRequest;
+    final Sleeper sleeper = Sleeper.DEFAULT;
+
+    public SendInsertAllRequest(ExponentialBackOff exponentialBackOff,
+                                  BigQueryClient bigQueryClient,
+                                  InsertAllRequest insertAllRequest) {
+      this.exponentialBackOff = exponentialBackOff;
+      this.bigQueryClient = bigQueryClient;
+      this.insertAllRequest = insertAllRequest;
+    }
+
+    @Override
+    public Void call() throws Exception {
+      exponentialBackOff.reset();
+      while (true) {
+        InsertAllResponse insertAllResponse = null;
+        try {
+          insertAllResponse = bigQueryClient.insertAll(insertAllRequest);
+        } catch (BigQueryException e) {
+          sleep(
+                  exponentialBackOff.nextBackOffMillis(),
+                  new SparkInsertAllException(e)); // TODO: catch deduplication...
+          continue;
+        }
+        if (!insertAllResponse.hasErrors()) {
+          break;
+        }
+        sleep(
+                exponentialBackOff.nextBackOffMillis(),
+                new SparkInsertAllException(insertAllResponse.getInsertErrors()));
+      }
+      return null;
+    }
+
+    private void sleep(long nextBackOffMillis, SparkInsertAllException sparkInsertAllException)
+            throws IOException {
+      if (nextBackOffMillis == BackOff.STOP) {
+        throw sparkInsertAllException;
+      }
+      try {
+        sleeper.sleep(nextBackOffMillis);
+      } catch (InterruptedException e) {
+        throw new RuntimeException(
+                "Insert All request's back-off was interrupted on the Spark side.", e);
       }
     }
   }

@@ -26,7 +26,7 @@ public class ExponentialBackOffFactory implements Serializable {
     this.maxIntervalMillis = maxIntervalMillis.isPresent() ? maxIntervalMillis.getAsInt() : null;
   }
 
-  public ExponentialBackOff createExponentialBackOff() {
+  public ExponentialBackOff.Builder createExponentialBackOff() {
     ExponentialBackOff.Builder builder = new ExponentialBackOff.Builder();
     if (maxElapsedTimeMillis != null) {
       builder.setMaxElapsedTimeMillis(maxElapsedTimeMillis);
@@ -40,6 +40,6 @@ public class ExponentialBackOffFactory implements Serializable {
     if (maxIntervalMillis != null) {
       builder.setMaxIntervalMillis(maxIntervalMillis);
     }
-    return builder.build();
+    return builder;
   }
 }
