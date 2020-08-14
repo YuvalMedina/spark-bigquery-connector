@@ -97,10 +97,10 @@ public class BigQueryDataSourceWriter implements DataSourceWriter {
 
   /**
    * This function determines whether the destination table exists: if it doesn't, Spark will do the
-   * writing directly to it; otherwise, if SaveMode = SaveMode.Overwrite or Append then a temporary table will
-   * be created, where the writing results will be stored before replacing / appending the destination table
-   * upon commit; this function also validates the destination table's schema matches the expected
-   * schema, if applicable.
+   * writing directly to it; otherwise, if SaveMode = SaveMode.Overwrite or Append then a temporary
+   * table will be created, where the writing results will be stored before replacing / appending
+   * the destination table upon commit; this function also validates the destination table's schema
+   * matches the expected schema, if applicable.
    *
    * @param saveMode the SaveMode supplied by the user.
    * @param destinationTableId the TableId, as was supplied by the user
@@ -177,7 +177,7 @@ public class BigQueryDataSourceWriter implements DataSourceWriter {
         Storage.BatchCommitWriteStreamsRequest.newBuilder().setParent(tablePathForBigQueryStorage);
     int i = 0;
     for (WriterCommitMessage message : messages) {
-      if(i == MAX_WRITE_STREAMS_TO_BATCH_COMMIT) {
+      if (i == MAX_WRITE_STREAMS_TO_BATCH_COMMIT) {
         batchCommitWriteStreams(batchCommitWriteStreamsRequest.build());
         batchCommitWriteStreamsRequest.clearWriteStreams();
       }
@@ -185,17 +185,16 @@ public class BigQueryDataSourceWriter implements DataSourceWriter {
           ((BigQueryWriterCommitMessage) message).getWriteStreamName());
       i++;
     }
-    if(batchCommitWriteStreamsRequest.getWriteStreamsCount() > 0) {
+    if (batchCommitWriteStreamsRequest.getWriteStreamsCount() > 0) {
       batchCommitWriteStreams(batchCommitWriteStreamsRequest.build());
     }
 
-    logger.info(
-        "BigQuery DataSource writer has committed at time: {}",
-        System.currentTimeMillis());
+    logger.info("BigQuery DataSource writer has committed at time: {}", System.currentTimeMillis());
 
     if (writingMode.equals(WritingMode.OVERWRITE)) {
       TableId temporaryTableId = tableForWriting;
-      Job overwriteJob = bigQueryClient.overwriteDestinationWithTemporary(temporaryTableId, destinationTableId);
+      Job overwriteJob =
+          bigQueryClient.overwriteDestinationWithTemporary(temporaryTableId, destinationTableId);
       bigQueryClient.waitForJob(overwriteJob);
       Preconditions.checkState(
           bigQueryClient.deleteTable(temporaryTableId),
@@ -204,31 +203,33 @@ public class BigQueryDataSourceWriter implements DataSourceWriter {
                   "Could not delete temporary table %s from BigQuery", temporaryTableId)));
     } else if (writingMode.equals(WritingMode.APPEND)) {
       TableId temporaryTableId = tableForWriting;
-      Job appendJob = bigQueryClient.appendFromTemporaryToDestination(temporaryTableId, destinationTableId);
+      Job appendJob =
+          bigQueryClient.appendFromTemporaryToDestination(temporaryTableId, destinationTableId);
       bigQueryClient.waitForJob(appendJob);
       Preconditions.checkState(
-              bigQueryClient.deleteTable(temporaryTableId),
-              new BigQueryConnectorException(
-                      String.format(
-                              "Could not delete temporary table %s from BigQuery", temporaryTableId)));
+          bigQueryClient.deleteTable(temporaryTableId),
+          new BigQueryConnectorException(
+              String.format(
+                  "Could not delete temporary table %s from BigQuery", temporaryTableId)));
     }
 
     writeClient.shutdown();
   }
 
-  private void batchCommitWriteStreams(Storage.BatchCommitWriteStreamsRequest batchCommitWriteStreamsRequest) {
+  private void batchCommitWriteStreams(
+      Storage.BatchCommitWriteStreamsRequest batchCommitWriteStreamsRequest) {
     Storage.BatchCommitWriteStreamsResponse batchCommitWriteStreamsResponse =
-            writeClient.batchCommitWriteStreams(batchCommitWriteStreamsRequest);
+        writeClient.batchCommitWriteStreams(batchCommitWriteStreamsRequest);
 
     if (!batchCommitWriteStreamsResponse.hasCommitTime()) {
       throw new BigQueryConnectorException(
-              "DataSource writer failed to batch commit its BigQuery write-streams");
+          "DataSource writer failed to batch commit its BigQuery write-streams");
     }
 
     logger.info(
-            "Batch committed {} streams at time: {}",
-            batchCommitWriteStreamsRequest.getWriteStreamsCount(),
-            batchCommitWriteStreamsResponse.getCommitTime());
+        "Batch committed {} streams at time: {}",
+        batchCommitWriteStreamsRequest.getWriteStreamsCount(),
+        batchCommitWriteStreamsResponse.getCommitTime());
   }
 
   /**
