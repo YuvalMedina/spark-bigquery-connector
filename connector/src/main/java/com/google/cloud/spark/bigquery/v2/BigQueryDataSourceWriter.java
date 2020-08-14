@@ -41,6 +41,7 @@ import static com.google.cloud.spark.bigquery.SchemaConverters.toBigQuerySchema;
 public class BigQueryDataSourceWriter implements DataSourceWriter {
 
   final Logger logger = LoggerFactory.getLogger(BigQueryDataSourceWriter.class);
+  final int MAX_WRITE_STREAMS_TO_BATCH_COMMIT = 100;
 
   private final BigQueryClient bigQueryClient;
   private final BigQueryWriteClientFactory writeClientFactory;
@@ -50,13 +51,14 @@ public class BigQueryDataSourceWriter implements DataSourceWriter {
   private final String writeUUID;
   private final RetrySettings bigqueryDataWriterHelperRetrySettings;
 
-  private final TableId temporaryTableId;
+  private final TableId tableForWriting;
   private final String tablePathForBigQueryStorage;
 
   private BigQueryWriteClient writeClient;
 
   enum WritingMode {
     IGNORE_INPUTS,
+    APPEND,
     OVERWRITE,
     ALL_ELSE
   }
@@ -84,9 +86,9 @@ public class BigQueryDataSourceWriter implements DataSourceWriter {
       throw new InvalidSchemaException("Could not convert Spark schema to protobuf descriptor", e);
     }
 
-    this.temporaryTableId = getOrCreateTable(saveMode, destinationTableId, bigQuerySchema);
+    this.tableForWriting = getOrCreateTable(saveMode, destinationTableId, bigQuerySchema);
     this.tablePathForBigQueryStorage =
-        bigQueryClient.createTablePathForBigQueryStorage(temporaryTableId);
+        bigQueryClient.createTablePathForBigQueryStorage(tableForWriting);
 
     if (!writingMode.equals(WritingMode.IGNORE_INPUTS)) {
       this.writeClient = writeClientFactory.createBigQueryWriteClient();
@@ -95,8 +97,8 @@ public class BigQueryDataSourceWriter implements DataSourceWriter {
 
   /**
    * This function determines whether the destination table exists: if it doesn't, Spark will do the
-   * writing directly to it; otherwise, if SaveMode = SaveMode.OVERWRITE then a temporary table will
-   * be created, where the writing results will be stored before replacing the destination table
+   * writing directly to it; otherwise, if SaveMode = SaveMode.Overwrite or Append then a temporary table will
+   * be created, where the writing results will be stored before replacing / appending the destination table
    * upon commit; this function also validates the destination table's schema matches the expected
    * schema, if applicable.
    *
@@ -119,7 +121,8 @@ public class BigQueryDataSourceWriter implements DataSourceWriter {
               "Destination table's schema is not compatible with dataframe's schema"));
       switch (saveMode) {
         case Append:
-          break;
+          writingMode = WritingMode.APPEND;
+          return bigQueryClient.createTempTable(destinationTableId, bigQuerySchema).getTableId();
         case Overwrite:
           writingMode = WritingMode.OVERWRITE;
           return bigQueryClient.createTempTable(destinationTableId, bigQuerySchema).getTableId();
@@ -154,7 +157,8 @@ public class BigQueryDataSourceWriter implements DataSourceWriter {
    * be done; otherwise all streams will be batch committed using the BigQuery Storage Write API,
    * and then: if in OVERWRITE mode, the overwriteDestinationWithTemporary function from
    * BigQueryClient will be called to replace the destination table with all the data from the
-   * temporary table; if in ALL_ELSE mode no more work needs to be done.
+   * temporary table; if an APPEND mode, the appendDestinationWithTemporary function will be called;
+   * if in ALL_ELSE mode no more work needs to be done.
    *
    * @see WritingMode
    * @see BigQueryClient#overwriteDestinationWithTemporary(TableId temporaryTableId, TableId
@@ -171,32 +175,60 @@ public class BigQueryDataSourceWriter implements DataSourceWriter {
 
     Storage.BatchCommitWriteStreamsRequest.Builder batchCommitWriteStreamsRequest =
         Storage.BatchCommitWriteStreamsRequest.newBuilder().setParent(tablePathForBigQueryStorage);
+    int i = 0;
     for (WriterCommitMessage message : messages) {
+      if(i == MAX_WRITE_STREAMS_TO_BATCH_COMMIT) {
+        batchCommitWriteStreams(batchCommitWriteStreamsRequest.build());
+        batchCommitWriteStreamsRequest.clearWriteStreams();
+      }
       batchCommitWriteStreamsRequest.addWriteStreams(
           ((BigQueryWriterCommitMessage) message).getWriteStreamName());
+      i++;
     }
-    Storage.BatchCommitWriteStreamsResponse batchCommitWriteStreamsResponse =
-        writeClient.batchCommitWriteStreams(batchCommitWriteStreamsRequest.build());
-
-    if (!batchCommitWriteStreamsResponse.hasCommitTime()) {
-      throw new BigQueryConnectorException(
-          "DataSource writer failed to batch commit its BigQuery write-streams");
+    if(batchCommitWriteStreamsRequest.getWriteStreamsCount() > 0) {
+      batchCommitWriteStreams(batchCommitWriteStreamsRequest.build());
     }
 
     logger.info(
         "BigQuery DataSource writer has committed at time: {}",
-        batchCommitWriteStreamsResponse.getCommitTime());
+        System.currentTimeMillis());
 
     if (writingMode.equals(WritingMode.OVERWRITE)) {
-      bigQueryClient.overwriteDestinationWithTemporary(temporaryTableId, destinationTableId);
+      TableId temporaryTableId = tableForWriting;
+      Job overwriteJob = bigQueryClient.overwriteDestinationWithTemporary(temporaryTableId, destinationTableId);
+      bigQueryClient.waitForJob(overwriteJob);
       Preconditions.checkState(
           bigQueryClient.deleteTable(temporaryTableId),
           new BigQueryConnectorException(
               String.format(
                   "Could not delete temporary table %s from BigQuery", temporaryTableId)));
+    } else if (writingMode.equals(WritingMode.APPEND)) {
+      TableId temporaryTableId = tableForWriting;
+      Job appendJob = bigQueryClient.appendFromTemporaryToDestination(temporaryTableId, destinationTableId);
+      bigQueryClient.waitForJob(appendJob);
+      Preconditions.checkState(
+              bigQueryClient.deleteTable(temporaryTableId),
+              new BigQueryConnectorException(
+                      String.format(
+                              "Could not delete temporary table %s from BigQuery", temporaryTableId)));
     }
 
     writeClient.shutdown();
+  }
+
+  private void batchCommitWriteStreams(Storage.BatchCommitWriteStreamsRequest batchCommitWriteStreamsRequest) {
+    Storage.BatchCommitWriteStreamsResponse batchCommitWriteStreamsResponse =
+            writeClient.batchCommitWriteStreams(batchCommitWriteStreamsRequest);
+
+    if (!batchCommitWriteStreamsResponse.hasCommitTime()) {
+      throw new BigQueryConnectorException(
+              "DataSource writer failed to batch commit its BigQuery write-streams");
+    }
+
+    logger.info(
+            "Batch committed {} streams at time: {}",
+            batchCommitWriteStreamsRequest.getWriteStreamsCount(),
+            batchCommitWriteStreamsResponse.getCommitTime());
   }
 
   /**
@@ -211,6 +243,10 @@ public class BigQueryDataSourceWriter implements DataSourceWriter {
     if (writingMode.equals(WritingMode.IGNORE_INPUTS)) return;
     if (writeClient != null && !writeClient.isShutdown()) {
       writeClient.shutdown();
+    }
+    // Deletes the preliminary table we wrote to (if it exists):
+    if (bigQueryClient.tableExists(tableForWriting)) {
+      bigQueryClient.deleteTable(tableForWriting);
     }
   }
 
